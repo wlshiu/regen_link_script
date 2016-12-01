@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="test_regen_ld_script" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Debug">
+				<Option output="bin/Debug/test_regen_ld_script" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Debug/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Option parameters="my_setting.ini" />
+				<Compiler>
+					<Add option="-g" />
+					<Add directory="iniparser" />
+					<Add directory="../test_regen_ld_script" />
+				</Compiler>
+			</Target>
+			<Target title="Release">
+				<Option output="bin/Release/test_regen_ld_script" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-O2" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+		</Compiler>
+		<Unit filename="iniparser/dictionary.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="iniparser/dictionary.h" />
+		<Unit filename="iniparser/iniparser.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="iniparser/iniparser.h" />
+		<Unit filename="main.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="my_setting.ini" />
+		<Unit filename="partial_read.h" />
+		<Extensions>
+			<code_completion />
+			<envvars />
+			<debugger />
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
