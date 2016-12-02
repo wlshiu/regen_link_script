@@ -32,15 +32,19 @@ extern "C" {
 typedef struct partial_read
 {
     FILE            *fp;
+    long            file_size;
+    long            file_remain;
 
     unsigned char   *pBuf;
-    int             buf_size;
-    int             remain_length;
+    long            buf_size;
+    long            buf_remain_data;
 
+    unsigned char   *pCur;
     unsigned char   *pEnd;
 
     int             alignment;
     unsigned long   is_big_endian;
+    unsigned long   is_restart;
 
 
 } partial_read_t;
@@ -55,11 +59,53 @@ typedef struct partial_read
 //=============================================================================
 //                  Public Function Definition
 //=============================================================================
-static inline int
+static int
 partial_read__full_buf(
-    partial_read_t  *pHReader)
+    partial_read_t  *pHReader,
+    int (*cb_post_read)(unsigned char *pBuf, int buf_size))
 {
     int         rval = 0;
+
+    do {
+        size_t      nbytes = 0;
+        long        remain_data = 0;
+
+        if( pHReader->is_restart )
+        {
+            fseek(pHReader->fp, 0l, SEEK_SET);
+            pHReader->file_remain = pHReader->file_size;
+
+            pHReader->pCur = pHReader->pBuf;
+            pHReader->pEnd = pHReader->pBuf;
+
+            pHReader->is_restart = 0;
+        }
+
+        remain_data = pHReader->pEnd - pHReader->pCur;
+        if( pHReader->file_remain &&
+            remain_data < (pHReader->buf_size >> 2) )
+        {
+            if( remain_data )
+                memmove(pHReader->pBuf, pHReader->pCur, remain_data);
+
+            // full buffer
+            nbytes = fread(pHReader->pBuf + remain_data, 1, pHReader->buf_size - remain_data, pHReader->fp);
+
+            pHReader->pCur = pHReader->pBuf;
+            pHReader->pEnd = pHReader->pBuf + remain_data + nbytes;
+
+            pHReader->file_remain -= nbytes;
+
+            // after reading process
+            if( cb_post_read &&
+                (rval = cb_post_read(pHReader->pBuf + remain_data, nbytes)) )
+               break;
+        }
+
+        pHReader->buf_remain_data = pHReader->pEnd - pHReader->pCur;
+
+    } while(0);
+
     return rval;
 }
 
