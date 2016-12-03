@@ -21,7 +21,7 @@ extern "C" {
 //=============================================================================
 //                  Constant Definition
 //=============================================================================
-#define MAX_SYMBOL_NAME_LENGTH       256
+#define MAX_SYMBOL_NAME_LENGTH       128
 //=============================================================================
 //                  Macro Definition
 //=============================================================================
@@ -42,6 +42,7 @@ typedef struct symbol_itm
     unsigned int    crc_id;
 } symbol_itm_t;
 
+
 /**
  *  call graph relation
  */
@@ -57,6 +58,36 @@ typedef struct symbol_relation
     symbol_itm_t        *pCallee_list_cur;
 
 } symbol_relation_t;
+
+
+/**
+ *  object file item
+ */
+struct obj_itm;
+typedef struct obj_itm
+{
+    struct obj_itm      *next;
+
+    char            obj_name[MAX_SYMBOL_NAME_LENGTH];
+    unsigned int    crc_id;
+} obj_itm_t;
+
+
+/**
+ *  static lib item
+ */
+struct lib_itm;
+typedef struct lib_itm
+{
+    struct lib_itm      *next;
+
+    char            lib_name[MAX_SYMBOL_NAME_LENGTH];
+    unsigned int    crc_id;
+
+    obj_itm_t       *pObj_head;
+    obj_itm_t       *pObj_cur;
+
+} lib_itm_t;
 //=============================================================================
 //                  Global Data Definition
 //=============================================================================
