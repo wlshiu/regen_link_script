@@ -2,12 +2,12 @@
 <CodeBlocks_project_file>
 	<FileVersion major="1" minor="6" />
 	<Project>
-		<Option title="test_regen_ld_script" />
+		<Option title="regen_ld_script" />
 		<Option pch_mode="2" />
 		<Option compiler="gcc" />
 		<Build>
 			<Target title="Debug">
-				<Option output="bin/Debug/test_regen_ld_script" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Debug/regen_ld_script" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
@@ -15,11 +15,11 @@
 				<Compiler>
 					<Add option="-g" />
 					<Add directory="iniparser" />
-					<Add directory="../test_regen_ld_script" />
+					<Add directory="../regen_ld_script" />
 				</Compiler>
 			</Target>
 			<Target title="Release">
-				<Option output="bin/Release/test_regen_ld_script" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release/regen_ld_script" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Release/" />
 				<Option type="1" />
 				<Option compiler="gcc" />

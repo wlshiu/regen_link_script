@@ -21,4 +21,8 @@ Release/*
 *.layout
 bin/*
 obj/*
-
+*.txt
+*.bin
+*.expand
+*.map
+*.nm
