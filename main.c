@@ -2,13 +2,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "iniparser.h"
 #include "partial_read.h"
 #include "symbol_info.h"
+#include "regex.h"
 #include "crc32.h"
 
-#include "mleak_check.h"
+//#include "mleak_check.h"
 //===================================================
 #define MAX_BUFFER_SIZE                     (2 << 20)
 #define FILE_NAME__BASIC_FUNC_FLOW          "basic_func_flow.txt"
@@ -135,6 +137,9 @@ _create_symbol_table(
     symbol_table_t  *pSymbol_table)
 {
     int         rval = 0;
+    regex_t     hRegex = {0};
+
+    regcomp(&hRegex, "(.*)\\s+(\\w)\\s+(.*)\\s+.*$", REG_EXTENDED);
 
     // generate symbol database
     partial_read__full_buf(pHReader_db, _post_read);
@@ -146,27 +151,69 @@ _create_symbol_table(
         }
 
         {   // start parsing a line
-            unsigned long   int_addr = 0l;
-            char            *pAct_str = 0;
-            char            symbol_type = 0;
-            char            symbol_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            unsigned long       int_addr = 0l;
+            char                *pAct_str = 0;
+            char                symbol_type = 0;
+            char                symbol_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            size_t              nmatch = 4;
+            regmatch_t          match_info[4] = {{0}};
 
             pAct_str = (char*)pHReader_db->pCur;
 
             pHReader_db->pCur += (strlen((char*)pHReader_db->pCur) + 1);
 
-            rval = sscanf(pAct_str, "%lx %c %s", &int_addr, &symbol_type, symbol_name);
-            if( rval != 3 )
-            {
-                // err("sscanf '%s' fail (return %d)\n", pAct_str, rval);
+            rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+            if( rval == REG_NOMATCH || rval )
                 continue;
+
+            {
+                char    *pTmp = symbol_name;
+
+                memset(pTmp, 0x0, MAX_SYMBOL_NAME_LENGTH);
+                if( match_info[1].rm_so != -1 )
+                {
+                    strncpy(pTmp, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                    int_addr = strtoul(pTmp, NULL, 16);
+                }
+
+                memset(pTmp, 0x0, MAX_SYMBOL_NAME_LENGTH);
+                if( match_info[2].rm_so != -1 )
+                {
+                    if( match_info[2].rm_eo - match_info[2].rm_so == 1 )
+                        symbol_type = pAct_str[match_info[2].rm_so];
+                }
+
+                memset(pTmp, 0x0, MAX_SYMBOL_NAME_LENGTH);
+                if( match_info[3].rm_so != -1 )
+                {
+                    strncpy(symbol_name, &pAct_str[match_info[3].rm_so], match_info[3].rm_eo - match_info[3].rm_so);
+                }
             }
 
             if( symbol_name[0] != '$' &&
                 (symbol_type == 'T' || symbol_type == 't') )
             {
+                unsigned int    crc_id = 0;
+                unsigned long   is_dummy = 0;
                 symbol_itm_t    *pNew_item = 0;
                 symbol_itm_t    *pCur_item = 0;
+
+                crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+
+                // check the same symbol
+                pCur_item = pSymbol_table->pSymbol_head;
+                while( pCur_item )
+                {
+                    if( pCur_item->crc_id == crc_id )
+                    {
+                        // err("get the same symbol name '%s'\n", pCur_item->symbol_name);
+                        is_dummy = 1;
+                        break;
+                    }
+                    pCur_item = pCur_item->next;
+                }
+
+                if( is_dummy )      continue;
 
                 if( !(pNew_item = malloc(sizeof(symbol_itm_t))) )
                 {
@@ -176,20 +223,8 @@ _create_symbol_table(
                 memset(pNew_item, 0x0, sizeof(symbol_itm_t));
 
                 pNew_item->pAddr  = (void*)int_addr;
-                pNew_item->crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+                pNew_item->crc_id = crc_id;
                 snprintf(pNew_item->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
-
-                // check the same symbol
-                pCur_item = pSymbol_table->pSymbol_head;
-                while( pCur_item )
-                {
-                    if( pCur_item->crc_id == pNew_item->crc_id )
-                    {
-                        // err("get the same symbol name '%s'\n", pCur_item->symbol_name);
-                        break;
-                    }
-                    pCur_item = pCur_item->next;
-                }
 
                 // add to list
                 if( pSymbol_table->pSymbol_head )
@@ -204,6 +239,8 @@ _create_symbol_table(
             }
         }
     }
+
+    regfree(&hRegex);
 
     return 0; //rval;
 }
@@ -324,6 +361,11 @@ _create_call_graph_table(
 {
     int                 rval = 0;
     symbol_relation_t   *pCur_item = 0;
+    regex_t             hRegex = {0};
+    regex_t             hRegex_sub = {0};
+
+    regcomp(&hRegex, "^;; Function (\\S+) \\((\\S+), .*\\)", REG_EXTENDED);
+    regcomp(&hRegex_sub, ".*\\(call .*\"(.*)\".*\\)", REG_EXTENDED);
 
     partial_read__full_buf(pHReader_expand, _post_read);
     while( pHReader_expand->pCur < pHReader_expand->pEnd )
@@ -336,96 +378,113 @@ _create_call_graph_table(
         {   // start parsing a line
             char                *pAct_str = 0;
             char                symbol_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            size_t              nmatch = 4;
+            regmatch_t          match_info[4] = {{0}};
 
             pAct_str = (char*)pHReader_expand->pCur;
 
             pHReader_expand->pCur += (strlen((char*)pHReader_expand->pCur) + 1);
 
-            rval = sscanf(pAct_str, ";; Function %s (%*s)", symbol_name);
-            if( rval == 1 )
+            if( *pAct_str == '\0' )     continue;
+
+            rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+            if( !rval )
             {
-                if( !(pCur_item = malloc(sizeof(symbol_relation_t))) )
+                if( match_info[1].rm_so != -1 )
                 {
-                    err("malloc '%d' fail \n", sizeof(symbol_relation_t));
-                    break;
-                }
-                memset(pCur_item, 0x0, sizeof(symbol_relation_t));
+                    strncpy(symbol_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
 
-                pCur_item->crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
-                snprintf(pCur_item->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
+                    if( !(pCur_item = malloc(sizeof(symbol_relation_t))) )
+                    {
+                        err("malloc '%d' fail \n", sizeof(symbol_relation_t));
+                        break;
+                    }
+                    memset(pCur_item, 0x0, sizeof(symbol_relation_t));
 
-                // insert to list
-                if( pCall_graph_table->pSymbol_head )
-                {
-                    pCall_graph_table->pSymbol_cur->next = pCur_item;
-                    pCall_graph_table->pSymbol_cur       = pCur_item;
+                    pCur_item->crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+                    snprintf(pCur_item->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
+
+                    // insert to list
+                    if( pCall_graph_table->pSymbol_head )
+                    {
+                        pCall_graph_table->pSymbol_cur->next = pCur_item;
+                        pCall_graph_table->pSymbol_cur       = pCur_item;
+                    }
+                    else
+                    {
+                        pCall_graph_table->pSymbol_head = pCall_graph_table->pSymbol_cur = pCur_item;
+                    }
                 }
-                else
-                {
-                    pCall_graph_table->pSymbol_head = pCall_graph_table->pSymbol_cur = pCur_item;
-                }
+
                 continue;
             }
 
-            pAct_str = strstr(pAct_str, "(call ");
-            if( !pAct_str )     continue;
-
-            rval = sscanf(pAct_str, "(call %*[^\"]\"%[^\"]", symbol_name);
-            if( rval == 1 )
+            rval = regexec(&hRegex_sub, pAct_str, nmatch, match_info, 0);
+            if( !rval )
             {
-                uint32_t        crc_id = 0;
-                symbol_itm_t    *pNew_callee_symbol = 0;
-
-                if( !pCur_item )
+                if( match_info[1].rm_so != -1 )
                 {
-                    err("%s", "lose current function name\n");
-                    break;
-                }
+                    uint32_t        crc_id = 0;
+                    symbol_itm_t    *pNew_callee_symbol = 0;
 
-                // check exist or not
-                if( pCur_item->pCallee_list_head )
-                {
-                    unsigned int            is_dummy = 0;
-                    symbol_itm_t            *pCur_callee = 0;
+                    strncpy(symbol_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
 
-                    crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
-
-                    pCur_callee = pCur_item->pCallee_list_head;
-                    while( pCur_callee )
+                    if( !pCur_item )
                     {
-                        if( (is_dummy = (pCur_callee->crc_id == crc_id)) )
-                            break;
-
-                        pCur_callee = pCur_callee->next;
+                        err("%s", "lose current function name\n");
+                        break;
                     }
 
-                    if( is_dummy )      continue;
+                    // check exist or not
+                    if( pCur_item->pCallee_list_head )
+                    {
+                        unsigned int            is_dummy = 0;
+                        symbol_itm_t            *pCur_callee = 0;
+
+                        crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+
+                        pCur_callee = pCur_item->pCallee_list_head;
+                        while( pCur_callee )
+                        {
+                            if( (is_dummy = (pCur_callee->crc_id == crc_id)) )
+                                break;
+
+                            pCur_callee = pCur_callee->next;
+                        }
+
+                        if( is_dummy )      continue;
+                    }
+
+                    // create caller symbol item
+                    if( !(pNew_callee_symbol = malloc(sizeof(symbol_itm_t))) )
+                    {
+                        err("malloc '%d' fail \n", sizeof(symbol_itm_t));
+                        break;
+                    }
+                    memset(pNew_callee_symbol, 0x0, sizeof(symbol_itm_t));
+
+                    pNew_callee_symbol->crc_id = (crc_id) ? crc_id : calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+                    snprintf(pNew_callee_symbol->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
+
+                    // insert to list
+                    if( pCur_item->pCallee_list_head )
+                    {
+                        pCur_item->pCallee_list_cur->next = pNew_callee_symbol;
+                        pCur_item->pCallee_list_cur       = pNew_callee_symbol;
+                    }
+                    else
+                    {
+                        pCur_item->pCallee_list_head = pCur_item->pCallee_list_cur = pNew_callee_symbol;
+                    }
                 }
 
-                // create caller symbol item
-                if( !(pNew_callee_symbol = malloc(sizeof(symbol_itm_t))) )
-                {
-                    err("malloc '%d' fail \n", sizeof(symbol_itm_t));
-                    break;
-                }
-                memset(pNew_callee_symbol, 0x0, sizeof(symbol_itm_t));
-
-                pNew_callee_symbol->crc_id = (crc_id) ? crc_id : calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
-                snprintf(pNew_callee_symbol->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
-
-                // insert to list
-                if( pCur_item->pCallee_list_head )
-                {
-                    pCur_item->pCallee_list_cur->next = pNew_callee_symbol;
-                    pCur_item->pCallee_list_cur       = pNew_callee_symbol;
-                }
-                else
-                {
-                    pCur_item->pCallee_list_head = pCur_item->pCallee_list_cur = pNew_callee_symbol;
-                }
+                continue;
             }
         }
     }
+
+    regfree(&hRegex);
+    regfree(&hRegex_sub);
 
     return rval;
 }
@@ -511,6 +570,15 @@ _create_lib_obj_table(
     lib_table_t         *pLib_table)
 {
     int                 rval = 0;
+    regex_t             hRegex = {0};
+
+    rval = regcomp(&hRegex, ".*/(.*)\\.(.*)\\((.*)\\.(.*)\\).*$", REG_EXTENDED);
+    if( rval )
+    {
+        char    msgbuf[256] = {0};
+        regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
+        printf("%s\n", msgbuf);
+    }
 
     partial_read__full_buf(pHReader_map, _post_read);
     while( pHReader_map->pCur < pHReader_map->pEnd )
@@ -524,12 +592,14 @@ _create_lib_obj_table(
             int                 i;
             uint32_t            crc_id = 0;
             char                *pAct_str = 0;
-            char                ext_lib[4] = {0};
-            char                ext_obj[4] = {0};
+            char                ext_lib = 0;
+            char                ext_obj = 0;
             char                lib_name[MAX_SYMBOL_NAME_LENGTH] = {0};
             char                obj_name[MAX_SYMBOL_NAME_LENGTH] = {0};
             lib_itm_t           *pAct_lib = 0;
             obj_itm_t           *pAct_obj = 0;
+            size_t              nmatch = 5;
+            regmatch_t          match_info[5] = {{0}};
 
             pAct_str = (char*)pHReader_map->pCur;
 
@@ -538,6 +608,44 @@ _create_lib_obj_table(
             for(i = 0; i < strlen(pAct_str); ++i)
                 pAct_str[i] = (pAct_str[i] == '\\') ? '/' : pAct_str[i];
 
+        #if 1
+            rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+            if( rval == REG_NOMATCH || rval )
+                continue;
+
+            {
+                if( match_info[1].rm_so != -1 )
+                {
+                    strncpy(lib_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                }
+
+                if( match_info[2].rm_so != -1 )
+                {
+                    if( match_info[2].rm_eo - match_info[2].rm_so != 1 ||
+                        pAct_str[match_info[2].rm_so] != 'a')
+                    {
+                        err("wrong lib name '%s.%c'\n", lib_name, pAct_str[match_info[2].rm_so]);
+                        continue;
+                    }
+                }
+
+                if( match_info[3].rm_so != -1 )
+                {
+                    strncpy(obj_name, &pAct_str[match_info[3].rm_so], match_info[3].rm_eo - match_info[3].rm_so);
+                }
+
+                if( match_info[4].rm_so != -1 )
+                {
+                    if( match_info[4].rm_eo - match_info[4].rm_so != 1 ||
+                        pAct_str[match_info[4].rm_so] != 'o')
+                    {
+                        err("wrong obj name '%s.%c'\n", obj_name, pAct_str[match_info[4].rm_so]);
+                        continue;
+                    }
+
+                }
+            }
+        #else
             // look up lib_name exist or not in a line
             pAct_str = strrchr(pAct_str, '/');
             if( !pAct_str )     continue;
@@ -556,7 +664,7 @@ _create_lib_obj_table(
                 err("wrong obj name '%s.%s'\n", obj_name, ext_obj);
                 continue;
             }
-
+        #endif
             //---------------------------------------
             // check lib exist or not in table
             crc_id = calc_crc32((uint8_t*)lib_name, strlen(lib_name));
@@ -637,6 +745,8 @@ _create_lib_obj_table(
             }
         }
     }
+
+    regfree(&hRegex);
 
     return rval;
 }
@@ -823,6 +933,15 @@ _complete_func_table(
     symbol_table_t      *pSymbol_table_lite)
 {
     int         rval = 0;
+    regex_t     hRegex = {0};
+
+    rval = regcomp(&hRegex, "^.*\\* \\(.text.(\\S+)\\)", REG_EXTENDED);
+    if( rval )
+    {
+        char    msgbuf[256] = {0};
+        regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
+        printf("%s\n", msgbuf);
+    }
 
 #if 0
     if( !(g_fFunc_tree = fopen("func_tree.txt", "wb")) )
@@ -844,16 +963,32 @@ _complete_func_table(
             char            *pAct_str = 0;
             char            symbol_name[MAX_SYMBOL_NAME_LENGTH] = {0};
             symbol_itm_t    *pSymbol_act = 0;
+            size_t          nmatch = 4;
+            regmatch_t      match_info[4] = {{0}};
 
             pAct_str = (char*)pHReader_basic_func_flow->pCur;
 
             pHReader_basic_func_flow->pCur += (strlen((char*)pHReader_basic_func_flow->pCur) + 1);
 
+            #if 1
+            rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+            if( rval == REG_NOMATCH || rval )
+                continue;
+
+            {
+                if( match_info[1].rm_so != -1 )
+                {
+                    strncpy(symbol_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                }
+            }
+            #else
             rval = sscanf(pAct_str, "* (.text.%[^)])", symbol_name);
             if( rval != 1 )
             {
                 continue;
             }
+            #endif // 1
+
 
             crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
 
@@ -897,6 +1032,8 @@ _complete_func_table(
             _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite);
         }
     }
+
+    regfree(&hRegex);
 
     if( g_fFunc_tree )      fclose(g_fFunc_tree);
 
@@ -946,6 +1083,7 @@ int main(int argc, char **argv)
             break;
 
         _create_symbol_table(&hReader_symbol_db, &symbol_table_all);
+        _dump_symbol_table("nm_symbol_list.txt", &symbol_table_all);
         _destroy_reader(&hReader_symbol_db);
 
         // binary address file
@@ -1031,6 +1169,6 @@ int main(int argc, char **argv)
 
     if( pIni )      iniparser_freedict(pIni);
 
-    mlead_dump();
+    // mlead_dump();
     return rval;
 }
