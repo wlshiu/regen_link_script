@@ -46,7 +46,7 @@
 + get symbol table from `ELF`
 
     ```
-    $ nm -C xxx.elf > xxx.symbol
+    $ nm -C -l xxx.elf > xxx.nm
     ```
 
 
