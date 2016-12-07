@@ -190,7 +190,7 @@ _create_symbol_table(
                 }
             }
 
-            if( symbol_name[0] != '$' &&
+            if( symbol_name[0] != '$' && symbol_name[0] != '.' &&
                 (symbol_type == 'T' || symbol_type == 't') )
             {
                 unsigned int    crc_id = 0;
