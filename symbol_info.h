@@ -40,6 +40,9 @@ typedef struct symbol_itm
     void            *pAddr;
     char            symbol_name[MAX_SYMBOL_NAME_LENGTH];
     unsigned int    crc_id;
+    unsigned int    lib_crc_id;
+    unsigned int    obj_crc_id;
+
 } symbol_itm_t;
 
 

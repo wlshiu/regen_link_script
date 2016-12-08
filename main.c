@@ -125,7 +125,7 @@ _post_read(unsigned char *pBuf, int buf_size)
     int     i;
     for(i = 0; i < buf_size; ++i)
     {
-        if( pBuf[i] == '\n' )
+        if( pBuf[i] == '\n' || pBuf[i] == '\r' )
             pBuf[i] = '\0';
     }
     return 0;
@@ -290,7 +290,9 @@ _dump_symbol_table(
         pCur = pSymbol_table->pSymbol_head;
         while( pCur )
         {
-            fprintf(fout, "* (.text.%s)\n", pCur->symbol_name);
+            char    lib_crc_str[64] = {0};
+            snprintf(lib_crc_str, 64, "# lib_crc= x%08x", pCur->lib_crc_id);
+            fprintf(fout, "* (.text.%s*) %s\n", pCur->symbol_name, (pCur->lib_crc_id) ? lib_crc_str : "");
             pCur = pCur->next;
         }
     } while(0);
@@ -336,7 +338,7 @@ _addr_to_func(
             if( (unsigned long)pCur_item->pAddr == *pCur_func_addr )
             {
                 if( fout )
-                    fprintf(fout, "* (.text.%s)\n", pCur_item->symbol_name);
+                    fprintf(fout, "* (.text.%s*)\n", pCur_item->symbol_name);
 
                 is_found = 1;
                 break;
@@ -572,13 +574,7 @@ _create_lib_obj_table(
     int                 rval = 0;
     regex_t             hRegex = {0};
 
-    rval = regcomp(&hRegex, ".*/(.*)\\.(.*)\\((.*)\\.(.*)\\).*$", REG_EXTENDED);
-    if( rval )
-    {
-        char    msgbuf[256] = {0};
-        regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
-        printf("%s\n", msgbuf);
-    }
+    rval = regcomp(&hRegex, ".*/(.*)\\.(.*)\\((.*)\\.(.*)\\)", REG_EXTENDED);
 
     partial_read__full_buf(pHReader_map, _post_read);
     while( pHReader_map->pCur < pHReader_map->pEnd )
@@ -592,8 +588,6 @@ _create_lib_obj_table(
             int                 i;
             uint32_t            crc_id = 0;
             char                *pAct_str = 0;
-            char                ext_lib = 0;
-            char                ext_obj = 0;
             char                lib_name[MAX_SYMBOL_NAME_LENGTH] = {0};
             char                obj_name[MAX_SYMBOL_NAME_LENGTH] = {0};
             lib_itm_t           *pAct_lib = 0;
@@ -624,7 +618,7 @@ _create_lib_obj_table(
                     if( match_info[2].rm_eo - match_info[2].rm_so != 1 ||
                         pAct_str[match_info[2].rm_so] != 'a')
                     {
-                        err("wrong lib name '%s.%c'\n", lib_name, pAct_str[match_info[2].rm_so]);
+                        // err("wrong lib name '%s.%c'\n", lib_name, pAct_str[match_info[2].rm_so]);
                         continue;
                     }
                 }
@@ -639,7 +633,7 @@ _create_lib_obj_table(
                     if( match_info[4].rm_eo - match_info[4].rm_so != 1 ||
                         pAct_str[match_info[4].rm_so] != 'o')
                     {
-                        err("wrong obj name '%s.%c'\n", obj_name, pAct_str[match_info[4].rm_so]);
+                        // err("wrong obj name '%s.%c'\n", obj_name, pAct_str[match_info[4].rm_so]);
                         continue;
                     }
 
@@ -810,7 +804,7 @@ _dump_lib_obj_table(
         pCur = pLib_table->pLib_head;
         while( pCur )
         {
-            fprintf(fout, "\n/* %s*/\n", pCur->lib_name);
+            fprintf(fout, "\n/* %s, crc_id= x%08x */\n", pCur->lib_name, pCur->crc_id);
             pCur_obj = pCur->pObj_head;
             while( pCur_obj )
             {
@@ -866,7 +860,11 @@ _look_up_relation(
             pCur = pCur->next;
         }
 
-        if( !pAct )     break;
+        if( !pAct )
+        {
+            // TODO: recode the symbol which the leaf function in graph relation
+            break;
+        }
 
         pSymbol_callee = pAct->pCallee_list_head;
         while( pSymbol_callee )
@@ -936,12 +934,6 @@ _complete_func_table(
     regex_t     hRegex = {0};
 
     rval = regcomp(&hRegex, "^.*\\* \\(.text.(\\S+)\\)", REG_EXTENDED);
-    if( rval )
-    {
-        char    msgbuf[256] = {0};
-        regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
-        printf("%s\n", msgbuf);
-    }
 
 #if 0
     if( !(g_fFunc_tree = fopen("func_tree.txt", "wb")) )
@@ -1040,6 +1032,169 @@ _complete_func_table(
     return rval;
 }
 
+static int
+_create_symbol_table_with_lib_obj(
+    partial_read_t  *pHReader_map,
+    symbol_table_t  *pSymbol_table)
+{
+    int         rval = 0;
+    regex_t     hRegex = {0};
+    regex_t     hRegex_sub = {0};
+
+    rval = regcomp(&hRegex, ".*\\.text\\.(\\w+)\\s*", REG_EXTENDED);
+    if( rval )
+    {
+        char    msgbuf[256] = {0};
+        regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
+        printf("%s\n", msgbuf);
+    }
+
+    rval = regcomp(&hRegex_sub, ".*0x[a-fA-F0-9]*\\s+0x[a-fA-F0-9]+\\s+.*\\/(.*)\\.(.*)\\((.*)\\.(.*)\\)", REG_EXTENDED);
+    if( rval )
+    {
+        char    msgbuf[256] = {0};
+        regerror(rval, &hRegex_sub, msgbuf, sizeof(msgbuf));
+        printf("%s\n", msgbuf);
+    }
+
+    partial_read__full_buf(pHReader_map, _post_read);
+    while( pHReader_map->pCur < pHReader_map->pEnd )
+    {
+        if( partial_read__full_buf(pHReader_map, _post_read) )
+        {
+            break;
+        }
+
+        {   // start parsing a line
+            int             i, retry_cnt = 0;
+            unsigned int    crc_id = 0;
+            char            *pAct_str = 0;
+            char            symbol_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            char            lib_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            char            obj_name[MAX_SYMBOL_NAME_LENGTH] = {0};
+            size_t          nmatch = 6;
+            regmatch_t      match_info[6] = {{0}};
+
+            pAct_str = (char*)pHReader_map->pCur;
+
+            pHReader_map->pCur += (strlen((char*)pHReader_map->pCur) + 1);
+
+            for(i = 0; i < strlen(pAct_str); ++i)
+                pAct_str[i] = (pAct_str[i] == '\\') ? '/' : pAct_str[i];
+
+            rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+            if( rval == REG_NOMATCH || rval )
+                continue;
+
+            if( match_info[1].rm_so == -1 )
+                continue;
+
+            strncpy(symbol_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+            crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+
+            //  check symbol name exist or not
+            if( pSymbol_table->pSymbol_head )
+            {
+                unsigned long   is_dummy = 0;
+                symbol_itm_t    *pCur_item = 0;
+
+                pCur_item = pSymbol_table->pSymbol_head;
+                while( pCur_item )
+                {
+                    if( pCur_item->crc_id == crc_id )
+                    {
+                        // err("get the same symbol name '%s'\n", pCur_item->symbol_name);
+                        is_dummy = 1;
+                        break;
+                    }
+                    pCur_item = pCur_item->next;
+                }
+
+                if( is_dummy )      continue;
+            }
+
+            retry_cnt = 0;
+            do {
+                symbol_itm_t    *pSymbol_act = 0;
+
+                if( retry_cnt )
+                {
+                    pAct_str = (char*)pHReader_map->pCur;
+
+                    pHReader_map->pCur += (strlen((char*)pHReader_map->pCur) + 1);
+
+                    for(i = 0; i < strlen(pAct_str); ++i)
+                        pAct_str[i] = (pAct_str[i] == '\\') ? '/' : pAct_str[i];
+                }
+
+                rval = regexec(&hRegex_sub, pAct_str, nmatch, match_info, 0);
+                if( !rval )
+                {
+                    if( match_info[1].rm_so != -1 )
+                    {
+                        strncpy(lib_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                    }
+
+                    if( match_info[2].rm_so != -1 )
+                    {
+                        if( match_info[2].rm_eo - match_info[2].rm_so != 1 ||
+                            pAct_str[match_info[2].rm_so] != 'a')
+                        {
+                            err("wrong lib name '%s.%c'\n", lib_name, pAct_str[match_info[2].rm_so]);
+                            break;
+                        }
+                    }
+
+                    if( match_info[3].rm_so != -1 )
+                    {
+                        strncpy(obj_name, &pAct_str[match_info[3].rm_so], match_info[3].rm_eo - match_info[3].rm_so);
+                    }
+
+                    if( match_info[4].rm_so != -1 )
+                    {
+                        if( match_info[4].rm_eo - match_info[4].rm_so != 1 ||
+                            pAct_str[match_info[4].rm_so] != 'o')
+                        {
+                            err("wrong obj name '%s.%c'\n", obj_name, pAct_str[match_info[4].rm_so]);
+                            break;
+                        }
+
+                    }
+
+                    // add to symbol table
+                    if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
+                    {
+                        err("malloc '%d' fail \n", sizeof(symbol_itm_t));
+                        break;
+                    }
+                    memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
+
+                    pSymbol_act->crc_id     = crc_id;
+                    pSymbol_act->lib_crc_id = calc_crc32((uint8_t*)lib_name, strlen(lib_name));
+                    pSymbol_act->obj_crc_id = calc_crc32((uint8_t*)obj_name, strlen(obj_name));
+                    snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", symbol_name);
+                    if( pSymbol_table->pSymbol_head )
+                    {
+                        pSymbol_table->pSymbol_cur->next = pSymbol_act;
+                        pSymbol_table->pSymbol_cur       = pSymbol_act;
+                    }
+                    else
+                    {
+                        pSymbol_table->pSymbol_head = pSymbol_table->pSymbol_cur = pSymbol_act;
+                    }
+                    break;
+                }
+
+            } while( ++retry_cnt < 2 );
+        }
+    }
+
+    regfree(&hRegex);
+    regfree(&hRegex_sub);
+
+    return rval;
+}
+
 //===================================================
 int main(int argc, char **argv)
 {
@@ -1053,6 +1208,7 @@ int main(int argc, char **argv)
     partial_read_t      hReader_basic_func_flow = {0};
     symbol_table_t      symbol_table_all = {0};
     symbol_table_t      symbol_table_lite = {0};
+    symbol_table_t      symbol_lib_table = {0};
     call_graph_table_t  call_graph_table = {0};
     lib_table_t         lib_table = {0};
 
@@ -1152,13 +1308,23 @@ int main(int argc, char **argv)
             break;
 
         _create_lib_obj_table(&hReader_map, &lib_table);
+
+        hReader_map.is_restart = 1;
+        _create_symbol_table_with_lib_obj(&hReader_map, &symbol_lib_table);
+        _dump_symbol_table("symbol_lib.txt", &symbol_lib_table);
+
         _destroy_reader(&hReader_map);
 
         _dump_lib_obj_table(&lib_table);
+
+        //------------------------------
+        // TODO: check a symbol is in which lib
+
     }while(0);
 
     _destroy_symbol_table(&symbol_table_all);
     _destroy_symbol_table(&symbol_table_lite);
+    _destroy_symbol_table(&symbol_lib_table);
     _destory_call_graph_table(&call_graph_table);
     _destory_lib_obj_table(&lib_table);
     _destroy_reader(&hReader_func_addr);
