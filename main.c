@@ -13,10 +13,31 @@
 //#include "mleak_check.h"
 //===================================================
 #define MAX_BUFFER_SIZE                     (2 << 20)
-#define FILE_NAME__BASIC_FUNC_FLOW          "basic_func_flow.txt"
+#define FILE_NAME__BASIC_FUNC_FLOW          "z_basic_func_flow.txt"
 
 //===================================================
 #define err(str, args...)           fprintf(stderr, "%s[%d] " str, __func__, __LINE__, ## args)
+
+#if 0
+    #include <windows.h>
+    #define my_time_t                                       DWORD
+    #define get_start_time(pTime_start)                     do{ (*pTime_start) = GetTickCount(); }while(0)
+    #define get_duration_ms(pTime_start, pDiff_ms)          do{ (*pDiff_ms) = 0; (*pDiff_ms) = GetTickCount() - (*pTime_start); }while(0)
+#else
+    #include <time.h>
+    #define my_time_t                                       time_t
+    #define get_start_time(pTime_start)                     do{ (*pTime_start) = time(NULL); }while(0)
+    #define get_duration_ms(pTime_start, pDiff_ms)          do{ (*pDiff_ms) = 0; (*pDiff_ms) = (time(NULL) - (*pTime_start)) * 1000; }while(0)
+#endif
+
+#define MESURE_TIME(pTime_start, pDiff_ms, is_start)                               \
+        do{ if( !is_start ) {                                                      \
+                get_duration_ms(pTime_start, pDiff_ms);                            \
+                err("------------------- duration '%ld' ms\n", *pDiff_ms);         \
+            }                                                                      \
+            get_start_time(pTime_start);                                           \
+        }while(0)
+
 
 
 //===================================================
@@ -529,11 +550,11 @@ _destory_call_graph_table(
 
 static int
 _dump_call_graph_table(
+    char                *pOut_name,
     call_graph_table_t  *pCall_graph_table)
 {
     int         rval = 0;
     FILE        *fout = 0;
-    char        *pOut_name = "call_graph_list.txt";
 
     do {
         symbol_relation_t      *pCur = 0;
@@ -602,7 +623,6 @@ _create_lib_obj_table(
             for(i = 0; i < strlen(pAct_str); ++i)
                 pAct_str[i] = (pAct_str[i] == '\\') ? '/' : pAct_str[i];
 
-        #if 1
             rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
             if( rval == REG_NOMATCH || rval )
                 continue;
@@ -639,26 +659,7 @@ _create_lib_obj_table(
 
                 }
             }
-        #else
-            // look up lib_name exist or not in a line
-            pAct_str = strrchr(pAct_str, '/');
-            if( !pAct_str )     continue;
 
-            rval = sscanf(pAct_str, "/%[^.].%[^(](%[^.].%[^)]) ", lib_name, ext_lib, obj_name, ext_obj);
-            if( rval != 4 )     continue;
-
-            if( strncmp(ext_lib, "a", 2) )
-            {
-                err("wrong lib name '%s.%s'\n", lib_name, ext_lib);
-                continue;
-            }
-
-            if( strncmp(ext_obj, "o", 2) )
-            {
-                err("wrong obj name '%s.%s'\n", obj_name, ext_obj);
-                continue;
-            }
-        #endif
             //---------------------------------------
             // check lib exist or not in table
             crc_id = calc_crc32((uint8_t*)lib_name, strlen(lib_name));
@@ -783,11 +784,11 @@ _destory_lib_obj_table(
 
 static int
 _dump_lib_obj_table(
-    lib_table_t         *pLib_table)
+    char            *pOut_name,
+    lib_table_t     *pLib_table)
 {
     int         rval = 0;
     FILE        *fout = 0;
-    char        *pOut_name = "lib_obj_list.txt";
 
     do {
         lib_itm_t      *pCur = 0;
@@ -828,7 +829,8 @@ _look_up_relation(
     call_graph_table_t  *pCall_graph_table,
     uint32_t            crc_id,
     char                *pSym_name,
-    symbol_table_t      *pSymbol_table_lite)
+    symbol_table_t      *pSymbol_table_lite,
+    symbol_table_t      *pSymbol_table_leaf)
 {
     int     rval = 0;
 
@@ -862,7 +864,46 @@ _look_up_relation(
 
         if( !pAct )
         {
-            // TODO: recode the symbol which the leaf function in graph relation
+            symbol_itm_t        *pSymbol_act = 0;
+
+            // recode the symbol which the leaf function in graph relation
+            if( pSymbol_table_leaf->pSymbol_head )
+            {
+                symbol_itm_t    *pSymbol_cur = pSymbol_table_leaf->pSymbol_head;
+
+                while( pSymbol_cur )
+                {
+                    if( pSymbol_cur->crc_id == crc_id )
+                    {
+                        pSymbol_act = pSymbol_cur;
+                        break;
+                    }
+                    pSymbol_cur = pSymbol_cur->next;
+                }
+            }
+
+            if( pSymbol_act )       break;
+
+            if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
+            {
+                err("malloc '%d' fail \n", sizeof(symbol_itm_t));
+                break;
+            }
+            memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
+
+            pSymbol_act->crc_id = crc_id;
+            snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", pSym_name);
+
+            if( pSymbol_table_leaf->pSymbol_head )
+            {
+                pSymbol_table_leaf->pSymbol_cur->next = pSymbol_act;
+                pSymbol_table_leaf->pSymbol_cur       = pSymbol_act;
+            }
+            else
+            {
+                pSymbol_table_leaf->pSymbol_head = pSymbol_table_leaf->pSymbol_cur = pSymbol_act;
+            }
+
             break;
         }
 
@@ -910,7 +951,8 @@ _look_up_relation(
                     pSymbol_table_lite->pSymbol_head = pSymbol_table_lite->pSymbol_cur = pSymbol_act;
                 }
 
-                _look_up_relation(pCall_graph_table, pSymbol_callee->crc_id, pSymbol_callee->symbol_name, pSymbol_table_lite);
+                _look_up_relation(pCall_graph_table, pSymbol_callee->crc_id, pSymbol_callee->symbol_name,
+                                  pSymbol_table_lite, pSymbol_table_leaf);
             }
 
             pSymbol_callee = pSymbol_callee->next;
@@ -928,15 +970,16 @@ static int
 _complete_func_table(
     partial_read_t      *pHReader_basic_func_flow,
     call_graph_table_t  *pCall_graph_table,
-    symbol_table_t      *pSymbol_table_lite)
+    symbol_table_t      *pSymbol_table_lite,
+    symbol_table_t      *pSymbol_table_leaf)
 {
     int         rval = 0;
     regex_t     hRegex = {0};
 
-    rval = regcomp(&hRegex, "^.*\\* \\(.text.(\\S+)\\)", REG_EXTENDED);
+    rval = regcomp(&hRegex, "^.*\\* \\(.text.(\\S+)\\*\\)", REG_EXTENDED);
 
 #if 0
-    if( !(g_fFunc_tree = fopen("func_tree.txt", "wb")) )
+    if( !(g_fFunc_tree = fopen("z_func_tree.txt", "wb")) )
     {
         err("open '%s' fail \n", "func_tree.txt");
     }
@@ -962,7 +1005,6 @@ _complete_func_table(
 
             pHReader_basic_func_flow->pCur += (strlen((char*)pHReader_basic_func_flow->pCur) + 1);
 
-            #if 1
             rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
             if( rval == REG_NOMATCH || rval )
                 continue;
@@ -973,14 +1015,6 @@ _complete_func_table(
                     strncpy(symbol_name, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
                 }
             }
-            #else
-            rval = sscanf(pAct_str, "* (.text.%[^)])", symbol_name);
-            if( rval != 1 )
-            {
-                continue;
-            }
-            #endif // 1
-
 
             crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
 
@@ -1021,7 +1055,7 @@ _complete_func_table(
             }
 
             // look up all_graph to get calllee
-            _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite);
+            _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite, pSymbol_table_leaf);
         }
     }
 
@@ -1050,12 +1084,6 @@ _create_symbol_table_with_lib_obj(
     }
 
     rval = regcomp(&hRegex_sub, ".*0x[a-fA-F0-9]*\\s+0x[a-fA-F0-9]+\\s+.*\\/(.*)\\.(.*)\\((.*)\\.(.*)\\)", REG_EXTENDED);
-    if( rval )
-    {
-        char    msgbuf[256] = {0};
-        regerror(rval, &hRegex_sub, msgbuf, sizeof(msgbuf));
-        printf("%s\n", msgbuf);
-    }
 
     partial_read__full_buf(pHReader_map, _post_read);
     while( pHReader_map->pCur < pHReader_map->pEnd )
@@ -1195,6 +1223,47 @@ _create_symbol_table_with_lib_obj(
     return rval;
 }
 
+static int
+_relate_leaf_with_lib(
+    symbol_table_t  *pSymbol_table_leaf,
+    symbol_table_t  *pSymbol_table_lib)
+{
+    int         rval = 0;
+
+    do {
+        symbol_itm_t    *pAct_symbol = 0;
+
+        if( !pSymbol_table_leaf || !pSymbol_table_leaf->pSymbol_head ||
+            !pSymbol_table_lib || !pSymbol_table_lib->pSymbol_head )
+            break;
+
+        pAct_symbol = pSymbol_table_leaf->pSymbol_head;
+        while( pAct_symbol )
+        {
+            unsigned long   is_exist = 0;
+            symbol_itm_t    *pCur_symbol = pSymbol_table_lib->pSymbol_head;
+            while( pCur_symbol )
+            {
+                if( pAct_symbol->crc_id == pCur_symbol->crc_id )
+                {
+                    pAct_symbol->lib_crc_id = pCur_symbol->lib_crc_id;
+                    pAct_symbol->obj_crc_id = pCur_symbol->obj_crc_id;
+                    is_exist = 1;
+                    break;
+                }
+                pCur_symbol = pCur_symbol->next;
+            }
+
+            if( !is_exist )
+                err("leaf symbol '%s' can't find lib\n", pAct_symbol->symbol_name);
+
+            pAct_symbol = pAct_symbol->next;
+        }
+    } while(0);
+
+    return rval;
+}
+
 //===================================================
 int main(int argc, char **argv)
 {
@@ -1208,9 +1277,11 @@ int main(int argc, char **argv)
     partial_read_t      hReader_basic_func_flow = {0};
     symbol_table_t      symbol_table_all = {0};
     symbol_table_t      symbol_table_lite = {0};
+    symbol_table_t      symbol_leaf_table = {0};
     symbol_table_t      symbol_lib_table = {0};
     call_graph_table_t  call_graph_table = {0};
     lib_table_t         lib_table = {0};
+    my_time_t           t_start = 0, t_diff = 0;
 
     do {
         pIni = iniparser_load(argv[1]);
@@ -1224,7 +1295,7 @@ int main(int argc, char **argv)
         // iniparser_dump(pIni, stderr);
 
         //--------------------------------
-        // generate basic function flow
+        // generate all symbols database
         pPath = iniparser_getstring(pIni, "func_addr:symbol_table_path", NULL);
         if( !pPath )
         {
@@ -1233,33 +1304,49 @@ int main(int argc, char **argv)
             break;
         }
 
+        MESURE_TIME(&t_start, &t_diff, 1);
+
         hReader_symbol_db.alignment     = 0;
         hReader_symbol_db.is_big_endian = 0;
         if( (rval = _create_reader(&hReader_symbol_db, pPath)) )
             break;
 
         _create_symbol_table(&hReader_symbol_db, &symbol_table_all);
-        _dump_symbol_table("nm_symbol_list.txt", &symbol_table_all);
+        _dump_symbol_table("z_nm_symbol_list.txt", &symbol_table_all);
         _destroy_reader(&hReader_symbol_db);
 
-        // binary address file
-        pPath = iniparser_getstring(pIni, "func_addr:bin_file_path", NULL);
+        MESURE_TIME(&t_start, &t_diff, 0);
+
+        //-------------------------------
+        // extract static lib
+        pPath = iniparser_getstring(pIni, "gcc:map_file_path", NULL);
         if( !pPath )
         {
             rval = -1;
-            err("%s", "no bin_file_path\n");
+            err("%s", "no map_file_path\n");
             break;
         }
-
-        hReader_func_addr.alignment     = iniparser_getint(pIni, "func_addr:addr_alignment", 0);
-        hReader_func_addr.is_big_endian = iniparser_getboolean(pIni, "func_addr:is_big_endian", 0);
-        if( (rval = _create_reader(&hReader_func_addr, pPath)) )
+        hReader_map.alignment     = 0;
+        hReader_map.is_big_endian = 0;
+        if( (rval = _create_reader(&hReader_map, pPath)) )
             break;
 
-        _addr_to_func(&hReader_func_addr, &symbol_table_all);
-        _destroy_reader(&hReader_func_addr);
+        _create_lib_obj_table(&hReader_map, &lib_table);
 
-        _destroy_symbol_table(&symbol_table_all);
+        MESURE_TIME(&t_start, &t_diff, 0);
+
+        hReader_map.is_restart = 1;
+        _create_symbol_table_with_lib_obj(&hReader_map, &symbol_lib_table);
+
+        MESURE_TIME(&t_start, &t_diff, 0);
+
+        _dump_symbol_table("z_symbol_lib.txt", &symbol_lib_table);
+
+        _destroy_reader(&hReader_map);
+
+        _dump_lib_obj_table("z_lib_obj_list.txt", &lib_table);
+
+        MESURE_TIME(&t_start, &t_diff, 0);
 
         //--------------------------------
         // generate call graph relation
@@ -1278,7 +1365,31 @@ int main(int argc, char **argv)
         _create_call_graph_table(&hReader_expand, &call_graph_table);
         _destroy_reader(&hReader_expand);
 
-        _dump_call_graph_table(&call_graph_table);
+        _dump_call_graph_table("z_call_graph_list.txt", &call_graph_table);
+
+        MESURE_TIME(&t_start, &t_diff, 0);
+
+        //--------------------------------
+        // binary address file to generate basic function flow
+        pPath = iniparser_getstring(pIni, "func_addr:bin_file_path", NULL);
+        if( !pPath )
+        {
+            rval = -1;
+            err("%s", "no bin_file_path\n");
+            break;
+        }
+
+        hReader_func_addr.alignment     = iniparser_getint(pIni, "func_addr:addr_alignment", 0);
+        hReader_func_addr.is_big_endian = iniparser_getboolean(pIni, "func_addr:is_big_endian", 0);
+        if( (rval = _create_reader(&hReader_func_addr, pPath)) )
+            break;
+
+        _addr_to_func(&hReader_func_addr, &symbol_table_all);
+        _destroy_reader(&hReader_func_addr);
+
+        _destroy_symbol_table(&symbol_table_all);
+
+        MESURE_TIME(&t_start, &t_diff, 0);
 
         //-------------------------------
         // complete functions base on basic_func_flow
@@ -1288,42 +1399,27 @@ int main(int argc, char **argv)
         if( (rval = _create_reader(&hReader_basic_func_flow, pPath)) )
             break;
 
-        _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite);
+        _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
         _destroy_reader(&hReader_basic_func_flow);
 
-        _dump_symbol_table("final_symbol_list.txt", &symbol_table_lite);
+        _dump_symbol_table("z_final_symbol_list.txt", &symbol_table_lite);
+        _dump_symbol_table("z_symbol_leaf.txt", &symbol_leaf_table);
 
-        //-------------------------------
-        // extract static lib
-        pPath = iniparser_getstring(pIni, "gcc:map_file_path", NULL);
-        if( !pPath )
-        {
-            rval = -1;
-            err("%s", "no map_file_path\n");
-            break;
-        }
-        hReader_map.alignment     = 0;
-        hReader_map.is_big_endian = 0;
-        if( (rval = _create_reader(&hReader_map, pPath)) )
-            break;
-
-        _create_lib_obj_table(&hReader_map, &lib_table);
-
-        hReader_map.is_restart = 1;
-        _create_symbol_table_with_lib_obj(&hReader_map, &symbol_lib_table);
-        _dump_symbol_table("symbol_lib.txt", &symbol_lib_table);
-
-        _destroy_reader(&hReader_map);
-
-        _dump_lib_obj_table(&lib_table);
+        MESURE_TIME(&t_start, &t_diff, 0);
 
         //------------------------------
-        // TODO: check a symbol is in which lib
+        // check a leaf symbol is in which lib
+        _relate_leaf_with_lib(&symbol_leaf_table, &symbol_lib_table);
+        _dump_symbol_table("z_leaf_lib.txt", &symbol_leaf_table);
 
+        MESURE_TIME(&t_start, &t_diff, 0);
     }while(0);
+
+    MESURE_TIME(&t_start, &t_diff, 1);
 
     _destroy_symbol_table(&symbol_table_all);
     _destroy_symbol_table(&symbol_table_lite);
+    _destroy_symbol_table(&symbol_leaf_table);
     _destroy_symbol_table(&symbol_lib_table);
     _destory_call_graph_table(&call_graph_table);
     _destory_lib_obj_table(&lib_table);
@@ -1335,6 +1431,8 @@ int main(int argc, char **argv)
 
     if( pIni )      iniparser_freedict(pIni);
 
-    // mlead_dump();
+    MESURE_TIME(&t_start, &t_diff, 0);
+
+    //mlead_dump();
     return rval;
 }
