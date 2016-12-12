@@ -14,6 +14,7 @@
 //===================================================
 #define MAX_BUFFER_SIZE                     (2 << 20)
 #define FILE_NAME__BASIC_FUNC_FLOW          "z_basic_func_flow.txt"
+#define FILE_NAME__OUT_TEMP                 "z_out.tmp"
 
 //===================================================
 #define err(str, args...)           fprintf(stderr, "%s[%d] " str, __func__, __LINE__, ## args)
@@ -72,6 +73,16 @@ typedef struct lib_table
 
 } lib_table_t;
 
+/**
+ *  all info for output
+ */
+typedef struct out_info
+{
+    symbol_table_t      *pSymbol_table_finial;
+    symbol_table_t      *pSymbol_table_leaf;
+    lib_table_t         *pLib_table;
+
+} out_info_t;
 //===================================================
 //===================================================
 static int
@@ -1264,17 +1275,126 @@ _relate_leaf_with_lib(
     return rval;
 }
 
+static int
+_duplicate_file(
+    const char    *pIn_file_path,
+    const char    *pOut_file_path)
+{
+    int             rval = 0;
+    FILE            *fin = 0, *fout = 0;
+    unsigned char   *pBuf = 0;
+
+    do {
+        long        buf_size = 1 << 20;
+        long        file_size = 0l;
+
+        if( !(pBuf = malloc(buf_size)) )
+        {
+            rval = -1;
+            err("malloc %ld fail \n", buf_size);
+            break;
+        }
+
+        if( !(fin = fopen(pIn_file_path, "rb")) )
+        {
+            rval = -1;
+            err("open '%s' fail \n", pIn_file_path);
+            break;
+        }
+
+        fseek(fin, 0l, SEEK_END);
+        file_size = ftell(fin);
+        fseek(fin, 0l, SEEK_SET);
+
+        if( !(fout = fopen(pOut_file_path, "wb")) )
+        {
+            rval = -1;
+            err("open '%s' fail \n", pOut_file_path);
+            break;
+        }
+
+        while( file_size )
+        {
+            long    nbytes = 0;
+
+            nbytes = fread(pBuf, 1, buf_size, fin);
+            if( nbytes )
+                fwrite(pBuf, 1, nbytes, fout);
+
+            file_size -= nbytes;
+        }
+    } while(0);
+
+    if( pBuf )      free(pBuf);
+    if( fin )       fclose(fin);
+    if( fout )      fclose(fout);
+
+    return rval;
+}
+
+static int
+_output_lds(
+    partial_read_t  *pHReader_pattern,
+    out_info_t      *pOut_info,
+    char            *pTarget_tag,
+    char            *pOut_name)
+{
+    int         rval = 0;
+    FILE        *fout = 0;
+
+    if( !(fout = fopen(pOut_name, "wb")) )
+    {
+        rval = -1;
+        err("open '%s' fail \n", pOut_name);
+        return rval;
+    }
+
+    partial_read__full_buf(pHReader_pattern, _post_read);
+    while( pHReader_pattern->pCur < pHReader_pattern->pEnd )
+    {
+        if( partial_read__full_buf(pHReader_pattern, _post_read) )
+        {
+            break;
+        }
+
+        {   // start parsing a line
+            char            *pAct_str = 0;
+            char            *pTmp_str = 0;
+
+            pAct_str = (char*)pHReader_pattern->pCur;
+
+            pHReader_pattern->pCur += (strlen((char*)pHReader_pattern->pCur) + 1);
+
+            pTmp_str = strstr(pAct_str, pTarget_tag);
+            if( !pTmp_str )
+            {
+                fprintf(fout, "%s\n", pAct_str);
+                continue;
+            }
+
+            // TODO: loop to write out
+            fprintf(fout, "*(.text.tttttest*)\n");
+        }
+    }
+
+    if( fout )      fclose(fout);
+
+    return rval;
+}
+
 //===================================================
 int main(int argc, char **argv)
 {
     int                 rval = 0;
     dictionary          *pIni = 0;
     const char          *pPath = 0;
+    const char          *pOut_path = 0, *pTag_name = 0;
     partial_read_t      hReader_func_addr = {0};
     partial_read_t      hReader_symbol_db = {0};
     partial_read_t      hReader_expand = {0};
     partial_read_t      hReader_map = {0};
     partial_read_t      hReader_basic_func_flow = {0};
+    partial_read_t      hReader_ld_pattern = {0};
     symbol_table_t      symbol_table_all = {0};
     symbol_table_t      symbol_table_lite = {0};
     symbol_table_t      symbol_leaf_table = {0};
@@ -1284,6 +1404,8 @@ int main(int argc, char **argv)
     my_time_t           t_start = 0, t_diff = 0;
 
     do {
+        int         i, tag_cnt = 0;
+
         pIni = iniparser_load(argv[1]);
         if( pIni == NULL )
         {
@@ -1369,50 +1491,101 @@ int main(int argc, char **argv)
 
         MESURE_TIME(&t_start, &t_diff, 0);
 
-        //--------------------------------
-        // binary address file to generate basic function flow
-        pPath = iniparser_getstring(pIni, "func_addr:bin_file_path", NULL);
+        //-------------------------------
+        // duplicate file
+        tag_cnt = iniparser_getint(pIni, "ld:region_tag_num", 0);
+        pPath = iniparser_getstring(pIni, "ld:pattern_file_path", NULL);
         if( !pPath )
         {
             rval = -1;
-            err("%s", "no bin_file_path\n");
+            err("%s", "no pattern_file_path\n");
+            break;
+        }
+        _duplicate_file(pPath, FILE_NAME__OUT_TEMP);
+
+        pOut_path = iniparser_getstring(pIni, "ld:output_lds_file_path", NULL);
+        if( !pOut_path )
+        {
+            rval = -1;
+            err("%s", "no output_lds_file_path\n");
             break;
         }
 
-        hReader_func_addr.alignment     = iniparser_getint(pIni, "func_addr:addr_alignment", 0);
-        hReader_func_addr.is_big_endian = iniparser_getboolean(pIni, "func_addr:is_big_endian", 0);
-        if( (rval = _create_reader(&hReader_func_addr, pPath)) )
-            break;
+        for(i = 0; i < tag_cnt; ++i)
+        {
+            out_info_t      out_info = {0};
+            char            tmp_str[128] = {0};
 
-        _addr_to_func(&hReader_func_addr, &symbol_table_all);
-        _destroy_reader(&hReader_func_addr);
+            //--------------------------------
+            // binary address file to generate basic function flow
+            snprintf(tmp_str, 128, "func_addr:bin_file_path_%d", i);
+            pPath = iniparser_getstring(pIni, tmp_str, NULL);
+            if( !pPath )
+            {
+                rval = -1;
+                err("no '%s'\n", tmp_str);
+                break;
+            }
 
-        _destroy_symbol_table(&symbol_table_all);
+            hReader_func_addr.alignment     = iniparser_getint(pIni, "func_addr:addr_alignment", 0);
+            hReader_func_addr.is_big_endian = iniparser_getboolean(pIni, "func_addr:is_big_endian", 0);
+            if( (rval = _create_reader(&hReader_func_addr, pPath)) )
+                break;
 
-        MESURE_TIME(&t_start, &t_diff, 0);
+            _addr_to_func(&hReader_func_addr, &symbol_table_all);
+            _destroy_reader(&hReader_func_addr);
 
-        //-------------------------------
-        // complete functions base on basic_func_flow
-        pPath = FILE_NAME__BASIC_FUNC_FLOW;
-        hReader_basic_func_flow.alignment     = 0;
-        hReader_basic_func_flow.is_big_endian = 0;
-        if( (rval = _create_reader(&hReader_basic_func_flow, pPath)) )
-            break;
+            _destroy_symbol_table(&symbol_table_all);
 
-        _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
-        _destroy_reader(&hReader_basic_func_flow);
+            MESURE_TIME(&t_start, &t_diff, 0);
 
-        _dump_symbol_table("z_final_symbol_list.txt", &symbol_table_lite);
-        _dump_symbol_table("z_symbol_leaf.txt", &symbol_leaf_table);
+            //-------------------------------
+            // complete functions base on basic_func_flow
+            pPath = FILE_NAME__BASIC_FUNC_FLOW;
+            hReader_basic_func_flow.alignment     = 0;
+            hReader_basic_func_flow.is_big_endian = 0;
+            if( (rval = _create_reader(&hReader_basic_func_flow, pPath)) )
+                break;
 
-        MESURE_TIME(&t_start, &t_diff, 0);
+            _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
+            _destroy_reader(&hReader_basic_func_flow);
 
-        //------------------------------
-        // check a leaf symbol is in which lib
-        _relate_leaf_with_lib(&symbol_leaf_table, &symbol_lib_table);
-        _dump_symbol_table("z_leaf_lib.txt", &symbol_leaf_table);
+            _dump_symbol_table("z_final_symbol_list.txt", &symbol_table_lite);
+            _dump_symbol_table("z_symbol_leaf.txt", &symbol_leaf_table);
 
-        MESURE_TIME(&t_start, &t_diff, 0);
+            MESURE_TIME(&t_start, &t_diff, 0);
+
+            //------------------------------
+            // check a leaf symbol is in which lib
+            _relate_leaf_with_lib(&symbol_leaf_table, &symbol_lib_table);
+            _dump_symbol_table("z_leaf_lib.txt", &symbol_leaf_table);
+
+            MESURE_TIME(&t_start, &t_diff, 0);
+
+            //-----------------------------------
+            // output lds
+            hReader_ld_pattern.alignment     = 0;
+            hReader_ld_pattern.is_big_endian = 0;
+            if( (rval = _create_reader(&hReader_ld_pattern, FILE_NAME__OUT_TEMP)) )
+                break;
+
+            snprintf(tmp_str, 128, "ld:region_tag_%d", i);
+            pTag_name = iniparser_getstring(pIni, tmp_str, NULL);
+            if( !pTag_name )
+            {
+                rval = -1;
+                err("no item '%s'\n", tmp_str);
+                break;
+            }
+
+            out_info.pSymbol_table_finial = &symbol_table_lite;
+            out_info.pSymbol_table_leaf   = &symbol_leaf_table;
+            out_info.pLib_table           = &lib_table;
+            _output_lds(&hReader_ld_pattern, &out_info, (char*)pTag_name, (char*)pOut_path);
+
+            _duplicate_file(pOut_path, FILE_NAME__OUT_TEMP);
+        }
+
     }while(0);
 
     MESURE_TIME(&t_start, &t_diff, 1);
@@ -1428,6 +1601,7 @@ int main(int argc, char **argv)
     _destroy_reader(&hReader_expand);
     _destroy_reader(&hReader_map);
     _destroy_reader(&hReader_basic_func_flow);
+    _destroy_reader(&hReader_ld_pattern);
 
     if( pIni )      iniparser_freedict(pIni);
 

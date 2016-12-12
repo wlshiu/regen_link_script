@@ -26,3 +26,4 @@ obj/*
 *.expand
 *.map
 *.nm
+*.tmp
