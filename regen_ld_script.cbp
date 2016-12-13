@@ -19,7 +19,7 @@
 					<Add directory="regex.2.7/include" />
 				</Compiler>
 				<Linker>
-					<Add option="-lregex.dll" />
+					<Add option="-lregex2" />
 					<Add directory="regex.2.7/lib" />
 				</Linker>
 			</Target>

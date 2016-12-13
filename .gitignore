@@ -27,3 +27,4 @@ obj/*
 *.map
 *.nm
 *.tmp
+z_*

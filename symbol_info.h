@@ -92,6 +92,8 @@ typedef struct lib_itm
     obj_itm_t       *pObj_head;
     obj_itm_t       *pObj_cur;
 
+    unsigned int    is_outputted;
+
 } lib_itm_t;
 //=============================================================================
 //                  Global Data Definition
