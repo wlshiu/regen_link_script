@@ -28,3 +28,4 @@ obj/*
 *.nm
 *.tmp
 z_*
+*.dump

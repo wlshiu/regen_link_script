@@ -545,6 +545,35 @@ _create_call_graph_table(
     regfree(&hRegex);
     regfree(&hRegex_sub);
 
+    {   // find the leaf function
+        symbol_relation_t       *pCur_caller = pCall_graph_table->pSymbol_head;
+        while( pCur_caller )
+        {
+            symbol_itm_t    *pCallee_symbol = pCur_caller->pCallee_list_head;
+            while( pCallee_symbol )
+            {
+                unsigned int            is_leaf = 1;
+                symbol_relation_t       *pTmp_caller = pCall_graph_table->pSymbol_head;
+                while( pTmp_caller )
+                {
+                    if( pCallee_symbol->crc_id == pTmp_caller->crc_id )
+                    {
+                        is_leaf = 0;
+                        break;
+                    }
+
+                    pTmp_caller = pTmp_caller->next;
+                }
+
+                pCallee_symbol->is_leaf = is_leaf;
+
+                pCallee_symbol = pCallee_symbol->next;
+            }
+
+            pCur_caller = pCur_caller->next;
+        }
+    }
+
     return rval;
 }
 
@@ -616,9 +645,73 @@ _dump_call_graph_table(
 
             pCur = pCur->next;
         }
+
+        {   // dump all leaf functions
+            symbol_table_t      leaf_func_table = {0};
+            char                path_leaf_list[128] = {0};
+
+            snprintf(path_leaf_list, 128, "z_all_leaf_%s", pOut_name);
+
+            pCur = pCall_graph_table->pSymbol_head;
+            while( pCur )
+            {
+                pCur_callee = pCur->pCallee_list_head;
+                while( pCur_callee )
+                {
+                    if( pCur_callee->is_leaf )
+                    {
+                        symbol_itm_t           *pAct_callee = 0;
+
+                        if( leaf_func_table.pSymbol_head )
+                        {
+                            symbol_itm_t    *pCur_leaf = leaf_func_table.pSymbol_head;
+                            while( pCur_leaf )
+                            {
+                                if( pCur_callee->crc_id == pCur_leaf->crc_id )
+                                {
+                                    pAct_callee = pCur_callee;
+                                    break;
+                                }
+                                pCur_leaf = pCur_leaf->next;
+                            }
+                        }
+
+                        if( !pAct_callee )
+                        {
+                            if( !(pAct_callee = malloc(sizeof(symbol_itm_t))) )
+                            {
+                                err("malloc %d fail \n", sizeof(symbol_itm_t));
+                                break;
+                            }
+
+                            memcpy(pAct_callee, pCur_callee, sizeof(symbol_itm_t));
+                            pAct_callee->next = 0;
+
+                            if( leaf_func_table.pSymbol_head )
+                            {
+                                leaf_func_table.pSymbol_cur->next = pAct_callee;
+                                leaf_func_table.pSymbol_cur       = pAct_callee;
+                            }
+                            else
+                            {
+                                leaf_func_table.pSymbol_head = leaf_func_table.pSymbol_cur = pAct_callee;
+                            }
+                        }
+                    }
+
+                    pCur_callee = pCur_callee->next;
+                }
+
+                pCur = pCur->next;
+            }
+
+            _dump_symbol_table(path_leaf_list, &leaf_func_table);
+            _destroy_symbol_table(&leaf_func_table);
+        }
+
     } while(0);
 
-    if( fout )      fclose(fout);
+    if( fout )          fclose(fout);
 
     return rval;
 }
