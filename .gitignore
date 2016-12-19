@@ -13,7 +13,6 @@ Debug/*
 Release/*
 *.o
 *.o.*
-*.a
 *.s
 *.ko
 *.so
