@@ -17,10 +17,9 @@
 #include <stdlib.h>
 
 #include "partial_read.h"
-#include "symbol_info.h"
+#include "table_desc.h"
 #include "crc32.h"
 
-//#include "mleak_check.h"
 //=============================================================================
 //                  Constant Definition
 //=============================================================================
@@ -280,15 +279,7 @@ _dump_symbol_table(
 //=============================================================================
 //                  Public Function Definition
 //=============================================================================
-static void
-usage(char *pProg_name)
-{
-    fprintf(stderr, "usage: %s [symbole list 1] [symbole list 2]\n",
-        pProg_name);
-    return;
-}
-
-int main(int argc, char **argv)
+int cmp_symbol(char *pList_1, char *pList_2)
 {
     int                 rval = 0;
     FILE                *fout = 0;
@@ -299,13 +290,7 @@ int main(int argc, char **argv)
     do {
         char                *pPath = 0;
 
-        if( argc != 2 )
-        {
-            usage(argv[0]);
-            break;
-        }
-
-        pPath = argv[1];
+        pPath = pList_1;
         hReader_list_a.alignment     = 0;
         hReader_list_a.is_big_endian = 0;
         if( (rval = _create_reader(&hReader_list_a, pPath)) )
@@ -314,7 +299,7 @@ int main(int argc, char **argv)
         _create_symbol_table(&hReader_list_a, &symbol_table_a);
         _dump_symbol_table("_a.txt", &symbol_table_a);
 
-        pPath = argv[2];
+        pPath = pList_2;
         hReader_list_b.alignment     = 0;
         hReader_list_b.is_big_endian = 0;
         if( (rval = _create_reader(&hReader_list_b, pPath)) )
@@ -353,7 +338,7 @@ int main(int argc, char **argv)
                 }
 
                 if( !is_match  )
-                    fprintf(fout, "%s excess: '%s'\n", argv[1], pSymbol_act->symbol_name);
+                    fprintf(fout, "%s excess: '%s'\n", pList_1, pSymbol_act->symbol_name);
 
                 pSymbol_act = pSymbol_act->next;
             }
@@ -378,7 +363,7 @@ int main(int argc, char **argv)
                 }
 
                 if( !is_match )
-                    fprintf(fout, "%s excess: '%s'\n", argv[2], pSymbol_act->symbol_name);
+                    fprintf(fout, "%s excess: '%s'\n", pList_2, pSymbol_act->symbol_name);
 
                 pSymbol_act = pSymbol_act->next;
             }
@@ -394,6 +379,5 @@ int main(int argc, char **argv)
     _destroy_symbol_table(&symbol_table_b);
 
     fprintf(stderr, "--------- done\n");
-    // mlead_dump();
     return 0;
 }

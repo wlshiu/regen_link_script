@@ -1,0 +1,17 @@
+EXPORTS
+    DllMain@12 @1
+    SomeFunction @2
+    re_compile_fastmap @3
+    re_compile_pattern @4
+    re_match @5
+    re_match_2 @6
+    re_search @7
+    re_search_2 @8
+    re_set_registers @9
+    re_set_syntax @10
+    re_syntax_options @11 DATA
+    regcomp @12
+    regerror @13
+    regexec @14
+    regfree @15
+    reggetinfo @16

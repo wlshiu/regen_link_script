@@ -60,7 +60,7 @@ typedef struct partial_read
 //=============================================================================
 //                  Public Function Definition
 //=============================================================================
-static int
+static inline int
 partial_read__full_buf(
     partial_read_t  *pHReader,
     int (*cb_post_read)(unsigned char *pBuf, int buf_size))

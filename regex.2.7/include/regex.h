@@ -203,7 +203,7 @@ typedef unsigned long int reg_syntax_t;
    stored in the pattern buffer, so changing this does not affect
    already-compiled regexps.  */
 REGEX_DLL_IMPEXP reg_syntax_t re_syntax_options;
-
+
 /* Define combinations of the above bits for the standard possibilities.
    (The [[[ comments delimit what gets put into the Texinfo file, so
    don't delete them!)  */
@@ -353,7 +353,7 @@ typedef enum
   REG_ESIZE,		/* Compiled pattern bigger than 2^16 bytes.  */
   REG_ERPAREN		/* Unmatched ) or \); not returned from regcomp.  */
 } reg_errcode_t;
-
+
 /* This data structure represents a compiled pattern.  Before calling
    the pattern compiler, the fields `buffer', `allocated', `fastmap',
    `translate', and `no_sub' can be set.  After the pattern has been
@@ -429,7 +429,7 @@ struct re_pattern_buffer
 };
 
 typedef struct re_pattern_buffer regex_t;
-
+
 /* Type for byte offsets within the string.  POSIX mandates this.  */
 typedef int regoff_t;
 
@@ -460,7 +460,7 @@ typedef struct
   regoff_t rm_so;  /* Byte offset from string's start to substring's start.  */
   regoff_t rm_eo;  /* Byte offset from string's start to substring's end.  */
 } regmatch_t;
-
+
 /* Declarations for routines.  */
 
 /* Sets the current default syntax to SYNTAX, and return the old syntax.
@@ -571,6 +571,8 @@ REGEX_DLL_IMPEXP size_t regerror (int __errcode, const regex_t *__restrict __pre
 			char *__restrict __errbuf, size_t __errbuf_size);
 
 REGEX_DLL_IMPEXP void regfree (regex_t *__preg);
+
+REGEX_DLL_IMPEXP void* reggetinfo(const char *name);
 
 
 #ifdef __cplusplus

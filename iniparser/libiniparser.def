@@ -1,0 +1,22 @@
+EXPORTS
+    DllMain@12 @1
+    SomeFunction @2
+    get_value @3
+    iniparser_dump @4
+    iniparser_dump_ini @5
+    iniparser_dumpsection_ini @6
+    iniparser_find_entry @7
+    iniparser_freedict @8
+    iniparser_getboolean @9
+    iniparser_getdouble @10
+    iniparser_getint @11
+    iniparser_getlongint @12
+    iniparser_getnsec @13
+    iniparser_getseckeys @14
+    iniparser_getsecname @15
+    iniparser_getsecnkeys @16
+    iniparser_getstring @17
+    iniparser_load @18
+    iniparser_set @19
+    iniparser_set_error_callback @20
+    iniparser_unset @21

@@ -11,16 +11,20 @@
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="gcc" />
-				<Option parameters="my_setting.ini" />
+				<Option parameters="--glds my_setting.ini" />
 				<Compiler>
 					<Add option="-g" />
+					<Add option="-DHAVE_CONFIG_H" />
+					<Add option="-D_WIN32" />
+					<Add option="-DBUILDING_DLL" />
 					<Add directory="iniparser" />
 					<Add directory="../regen_link_script" />
 					<Add directory="regex.2.7/include" />
 				</Compiler>
 				<Linker>
-					<Add option="-lregex2" />
+					<Add option="-lregex -liniparser" />
 					<Add directory="regex.2.7/lib" />
+					<Add directory="iniparser" />
 				</Linker>
 			</Target>
 			<Target title="Release">
@@ -30,38 +34,46 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-O2" />
+					<Add option="-DHAVE_CONFIG_H" />
+					<Add option="-D_WIN32" />
+					<Add option="-DBUILDING_DLL" />
+					<Add directory="iniparser" />
+					<Add directory="regex.2.7/include" />
+					<Add directory="../regen_link_script" />
 				</Compiler>
 				<Linker>
 					<Add option="-s" />
+					<Add option="-lregex -liniparser" />
+					<Add directory="regex.2.7/lib" />
+					<Add directory="iniparser" />
 				</Linker>
 			</Target>
 		</Build>
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
+		<Unit filename="cmp_symbol.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Unit filename="crc32.c">
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="crc32.h" />
-		<Unit filename="iniparser/dictionary.c">
-			<Option compilerVar="CC" />
-		</Unit>
-		<Unit filename="iniparser/dictionary.h" />
-		<Unit filename="iniparser/iniparser.c">
-			<Option compilerVar="CC" />
-		</Unit>
-		<Unit filename="iniparser/iniparser.h" />
 		<Unit filename="main.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="mleak_check.c">
+		<Unit filename="partial_read.h" />
+		<Unit filename="table_desc.h" />
+		<Unit filename="table_lib.c">
 			<Option compilerVar="CC" />
 		</Unit>
-		<Unit filename="mleak_check.h" />
-		<Unit filename="my_setting.ini" />
-		<Unit filename="partial_read.h" />
-		<Unit filename="regex.2.7/include/regex.h" />
-		<Unit filename="symbol_info.h" />
+		<Unit filename="table_mgr.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="table_mgr.h" />
+		<Unit filename="table_symbols.c">
+			<Option compilerVar="CC" />
+		</Unit>
 		<Extensions>
 			<code_completion />
 			<envvars />
