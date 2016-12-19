@@ -1827,7 +1827,7 @@ int main(int argc, char **argv)
             _addr_to_func(&hReader_func_addr, &symbol_table_all);
             _destroy_reader(&hReader_func_addr);
 
-            _destroy_symbol_table(&symbol_table_all);
+            // _destroy_symbol_table(&symbol_table_all);
 
             MESURE_TIME(&t_start, &t_diff, 0);
 
