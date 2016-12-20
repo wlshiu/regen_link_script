@@ -19,7 +19,7 @@
 #include "partial_read.h"
 #include "table_desc.h"
 #include "crc32.h"
-
+#include "regex.h"
 //=============================================================================
 //                  Constant Definition
 //=============================================================================
@@ -41,6 +41,16 @@ typedef struct symbol_table
     symbol_itm_t        *pSymbol_cur;
 
 } symbol_table_t;
+
+typedef struct region_info
+{
+    char    *pStart;
+    char    *pEnd;
+
+    unsigned long   addr_start;
+    unsigned long   addr_end;
+
+} region_info_t;
 //=============================================================================
 //                  Global Data Definition
 //=============================================================================
@@ -381,3 +391,118 @@ int cmp_symbol(char *pList_1, char *pList_2)
     fprintf(stderr, "--------- done\n");
     return 0;
 }
+
+
+int calc_region_size(char *pPath, int argc, const char **ppStart_word, const char **ppEnd_word)
+{
+#define MAX_REGION_KEY_NUM          10
+    int                 rval = 0;
+    partial_read_t      hReader = {0};
+    regex_t             hRegex = {0};
+
+    do {
+        int             i, pattern_cnt = 0;
+        region_info_t   region_info[MAX_REGION_KEY_NUM] = {{0}};
+
+        if( (rval = _create_reader(&hReader, pPath)) )
+            break;
+
+        pattern_cnt = (argc < MAX_REGION_KEY_NUM) ? argc : MAX_REGION_KEY_NUM;
+        for(i = 0; i < pattern_cnt; ++i)
+        {
+            region_info[i].pStart = (char*)ppStart_word[i];
+            region_info[i].pEnd   = (char*)ppEnd_word[i];
+        }
+
+        i = 0;
+        partial_read__full_buf(&hReader, _post_read);
+        while( hReader.pCur < hReader.pEnd )
+        {
+            if( partial_read__full_buf(&hReader, _post_read) )
+            {
+                break;
+            }
+
+            {   // start parsing a line
+                char            *pAct_str = 0;
+
+                pAct_str = (char*)hReader.pCur;
+
+                hReader.pCur += (strlen((char*)hReader.pCur) + 1);
+                for(i = 0; i < pattern_cnt; ++i)
+                {
+                    unsigned long       int_addr = 0l;
+                    char                tmp_str[128] = {0};
+                    size_t              nmatch = 2;
+                    regmatch_t          match_info[2] = {{0}};
+
+                    if( (strstr(pAct_str, region_info[i].pStart)) )
+                    {
+                        snprintf(tmp_str, 128, "^.*0x([0-9A-Fa-f]+)\\s+%s", region_info[i].pStart);
+                        rval = regcomp(&hRegex, tmp_str, REG_EXTENDED);
+                        if( rval )
+                        {
+                            char    msgbuf[256] = {0};
+                            regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
+                            err("%s\n", msgbuf);
+                        }
+
+                        rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+                        if( rval == REG_NOMATCH || rval )
+                            continue;
+
+                        memset(tmp_str, 0x0, 128);
+                        if( match_info[1].rm_so != -1 )
+                        {
+                            strncpy(tmp_str, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                            int_addr = strtoul(tmp_str, NULL, 16);
+                            region_info[i].addr_start = int_addr;
+                        }
+                    }
+
+                    if( (strstr(pAct_str, region_info[i].pEnd)) )
+                    {
+                        snprintf(tmp_str, 128, "^.*0x([0-9A-Fa-f]+)\\s+%s", region_info[i].pEnd);
+                        rval = regcomp(&hRegex, tmp_str, REG_EXTENDED);
+                        if( rval )
+                        {
+                            char    msgbuf[256] = {0};
+                            regerror(rval, &hRegex, msgbuf, sizeof(msgbuf));
+                            err("%s\n", msgbuf);
+                        }
+
+                        rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
+                        if( rval == REG_NOMATCH || rval )
+                            continue;
+
+                        memset(tmp_str, 0x0, 128);
+                        if( match_info[1].rm_so != -1 )
+                        {
+                            strncpy(tmp_str, &pAct_str[match_info[1].rm_so], match_info[1].rm_eo - match_info[1].rm_so);
+                            int_addr = strtoul(tmp_str, NULL, 16);
+                            region_info[i].addr_end = int_addr;
+                        }
+                    }
+                }
+            }
+        }
+
+        fprintf(stderr, "\n==================\n");
+        for(i = 0; i < pattern_cnt; ++i)
+        {
+            region_info_t   *pCur_info = &region_info[i];
+
+            fprintf(stderr, "region %02d: x%08lx -> x%08lx, (size= %ld)\n",
+                    i, pCur_info->addr_start, pCur_info->addr_end,
+                    pCur_info->addr_end - pCur_info->addr_start);
+        }
+        fprintf(stderr, "==================\n");
+    } while(0);
+
+    regfree(&hRegex);
+
+    _destroy_reader(&hReader);
+
+    return rval;
+}
+

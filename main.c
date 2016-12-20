@@ -660,33 +660,7 @@ _gen_lds(char *pIni_path)
         // iniparser_dump(pIni, stderr);
 
         table_mgr__init(&pTab_mgr);
-        //--------------------------------
-        // generate all symbols database
-        pPath = iniparser_getstring(pIni, "func_addr:symbol_table_path", NULL);
-        if( !pPath )
-        {
-            rval = -1;
-            err_msg("%s", "no symbol_table_path\n");
-            break;
-        }
-
         MESURE_TIME(&t_start, &t_diff, 1);
-
-        hReader_symbol_nm.alignment     = 0;
-        hReader_symbol_nm.is_big_endian = 0;
-        if( (rval = _create_reader(&hReader_symbol_nm, pPath)) )
-            break;
-
-        args.pTunnel_info           = (void*)&hReader_symbol_nm;
-        args.table.pTable_symbols   = &symbol_table_all;
-        table_mgr__create_table(pTab_mgr, TABLE_ID_SYMBOLS, &args);
-
-        args.pOut_name = "z_nm_symbol_list.txt";
-        table_mgr__dump_table(pTab_mgr, TABLE_ID_SYMBOLS, &args);
-
-        _destroy_reader(&hReader_symbol_nm);
-
-        MESURE_TIME(&t_start, &t_diff, 0);
 
         //-------------------------------
         // extract static lib
@@ -751,7 +725,7 @@ _gen_lds(char *pIni_path)
 
             args.pOut_name    = "z_call_graph_list.txt";
             args.pTunnel_info = (void*)&sub_args;
-            printf("==== %p, %p\n", args.pTunnel_info, sub_args.table.pTable_symbols);
+
             table_mgr__dump_table(pTab_mgr, TABLE_ID_CALL_GRAPH, &args);
 
             snprintf(path_leaf_list, 128, "z_all_leaf_%s", args.pOut_name);
@@ -792,6 +766,35 @@ _gen_lds(char *pIni_path)
 
             MESURE_TIME(&t_start, &t_diff, 1);
 
+            fprintf(stderr, "============= tag %d ===============\n", i);
+            //--------------------------------
+            // generate all symbols database
+            snprintf(tmp_str, 128, "func_addr:symbol_table_path_%d", i);
+            pPath = iniparser_getstring(pIni, tmp_str, NULL);
+            if( !pPath )
+            {
+                rval = -1;
+                err_msg("%s", "no symbol_table_path\n");
+                break;
+            }
+
+            hReader_symbol_nm.alignment     = 0;
+            hReader_symbol_nm.is_big_endian = 0;
+            if( (rval = _create_reader(&hReader_symbol_nm, pPath)) )
+                break;
+
+            args.pTunnel_info           = (void*)&hReader_symbol_nm;
+            args.table.pTable_symbols   = &symbol_table_all;
+            table_mgr__create_table(pTab_mgr, TABLE_ID_SYMBOLS, &args);
+
+            snprintf(tmp_str, 128, "z_nm_symbol_list_%d.txt", i);
+            args.pOut_name = tmp_str;
+            table_mgr__dump_table(pTab_mgr, TABLE_ID_SYMBOLS, &args);
+
+            _destroy_reader(&hReader_symbol_nm);
+
+            MESURE_TIME(&t_start, &t_diff, 0);
+
             //--------------------------------
             // binary address file to generate basic function flow
             snprintf(tmp_str, 128, "func_addr:bin_file_path_%d", i);
@@ -811,11 +814,14 @@ _gen_lds(char *pIni_path)
             _addr_to_func(&hReader_func_addr, &symbol_table_all);
             _destroy_reader(&hReader_func_addr);
 
+            args.table.pTable_symbols   = &symbol_table_all;
+            table_mgr__destroy_table(pTab_mgr, TABLE_ID_SYMBOLS, &args);
+
             MESURE_TIME(&t_start, &t_diff, 0);
 
             //-------------------------------
             // complete functions base on basic_func_flow
-            pPath = "func_list.dump"; //FILE_NAME__BASIC_FUNC_FLOW;
+            pPath = FILE_NAME__BASIC_FUNC_FLOW;
             hReader_basic_func_flow.alignment     = 0;
             hReader_basic_func_flow.is_big_endian = 0;
             if( (rval = _create_reader(&hReader_basic_func_flow, pPath)) )
@@ -897,6 +903,51 @@ _gen_lds(char *pIni_path)
     return rval;
 }
 
+static int
+_get_region_size(char *pIni_path)
+{
+#define MAX_REGION_KEY_NUM          10
+    extern int calc_region_size(char *pPath, int argc, const char **ppStart_word, const char **ppEnd_word);
+    int                 rval = 0;
+    dictionary          *pIni = 0;
+    do {
+        int         i, region_cnt = 0;
+        char        *pPath = 0;
+        const char  *pKey_start[MAX_REGION_KEY_NUM] = {0};
+        const char  *pKey_end[MAX_REGION_KEY_NUM] = {0};
+
+        pIni = iniparser_load(pIni_path);
+        if( pIni == NULL )
+        {
+            err_msg("cannot parse file: '%s'\n", pIni_path);
+            rval = -1;
+            break;
+        }
+
+        pPath      = (char*)iniparser_getstring(pIni, "rsize:map_file_path", NULL);
+        region_cnt = iniparser_getint(pIni, "rsize:region_num", 0);
+
+        region_cnt = (region_cnt < MAX_REGION_KEY_NUM) ? region_cnt : MAX_REGION_KEY_NUM;
+        for(i = 0; i < region_cnt; ++i)
+        {
+            char            tmp_str[128] = {0};
+
+            snprintf(tmp_str, 128, "rsize:key_region_%d_start", i);
+            pKey_start[i] = iniparser_getstring(pIni, tmp_str, NULL);
+
+            snprintf(tmp_str, 128, "rsize:key_region_%d_end", i);
+            pKey_end[i] = iniparser_getstring(pIni, tmp_str, NULL);
+        }
+
+        pPath = "amba_ssp_ut.map";
+        calc_region_size(pPath, region_cnt, pKey_start, pKey_end);
+
+    } while(0);
+
+    if( pIni )      iniparser_freedict(pIni);
+
+    return rval;
+}
 //==============================================================
 int main(int argc, char **argv)
 {
@@ -913,7 +964,8 @@ int main(int argc, char **argv)
         }
         else if( !strcmp(argv[0], "--rsize") )
         {
-
+            _get_region_size(argv[1]);
+            argv++; argc--;
         }
         else if( !strcmp(argv[0], "--glds") )
         {
