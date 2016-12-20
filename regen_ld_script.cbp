@@ -21,6 +21,7 @@
 				<Linker>
 					<Add option="-lregex2" />
 					<Add directory="regex.2.7/lib" />
+					<Add directory="iniparser" />
 				</Linker>
 			</Target>
 			<Target title="Release">
@@ -30,9 +31,15 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-O2" />
+					<Add directory="regex.2.7/include" />
+					<Add directory="iniparser" />
+					<Add directory="../regen_link_script" />
 				</Compiler>
 				<Linker>
 					<Add option="-s" />
+					<Add option="-lregex2" />
+					<Add directory="regex.2.7/lib" />
+					<Add directory="iniparser" />
 				</Linker>
 			</Target>
 		</Build>

@@ -399,7 +399,7 @@ _create_call_graph_table(
     regex_t             hRegex_sub = {0};
 
     regcomp(&hRegex, "^;; Function (\\S+) \\((\\S+), .*\\)", REG_EXTENDED);
-    regcomp(&hRegex_sub, ".*\\(call .*\"(.*)\".*\\)", REG_EXTENDED);
+    regcomp(&hRegex_sub, ".*<function_decl\\s+0?x?[0-9a-fA-F]+\\s+(.*)>\\).*$", REG_EXTENDED);
 
     partial_read__full_buf(pHReader_expand, _post_read);
     while( pHReader_expand->pCur < pHReader_expand->pEnd )
@@ -478,6 +478,9 @@ _create_call_graph_table(
                 continue;
             }
 
+            if( !(strstr(pAct_str, "<function_decl")) )
+                continue;
+
             rval = regexec(&hRegex_sub, pAct_str, nmatch, match_info, 0);
             if( !rval )
             {
@@ -494,13 +497,15 @@ _create_call_graph_table(
                         break;
                     }
 
+                    crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
+                    if( crc_id == pCur_item->crc_id )
+                        continue;
+
                     // check exist or not
                     if( pCur_item->pCallee_list_head )
                     {
                         unsigned int            is_dummy = 0;
                         symbol_itm_t            *pCur_callee = 0;
-
-                        crc_id = calc_crc32((uint8_t*)symbol_name, strlen(symbol_name));
 
                         pCur_callee = pCur_item->pCallee_list_head;
                         while( pCur_callee )
