@@ -64,6 +64,8 @@ typedef struct symbol_itm
     unsigned int    lib_crc_id;
     unsigned int    obj_crc_id;
 
+    unsigned int    crc_mark_id;
+
     unsigned int    is_outputted;
     unsigned int    is_leaf;
 

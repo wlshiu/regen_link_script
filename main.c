@@ -47,7 +47,17 @@
             get_start_time(pTime_start);                                           \
         }while(0)
 
+
+#define GET_DWORD(a, b, c, d)       (((a)&0xFF) | (((b)&0xFF) << 8) | (((c)&0xFF) << 16) | (((d)&0xFF) << 24))
+
 //=========================================================
+typedef struct mark_info
+{
+#define MAX_MARK_NUM        5
+    int             mark_order;
+    unsigned int    crc_mark[MAX_MARK_NUM];
+
+} mark_info_t;
 
 //==============================================================
 static int
@@ -281,7 +291,6 @@ _output_lds(
     return rval;
 }
 
-
 static int
 _addr_to_func(
     partial_read_t  *pHReader_addr,
@@ -299,8 +308,9 @@ _addr_to_func(
     partial_read__full_buf(pHReader_addr, NULL);
     while( pHReader_addr->pCur < pHReader_addr->pEnd )
     {
+        unsigned char       *pCur = pHReader_addr->pCur;
         unsigned int        is_found = 0;
-        unsigned long       *pCur_func_addr = 0;
+        unsigned long       cur_func_addr = 0;
         symbol_itm_t        *pCur_item = 0;
 
         if( partial_read__full_buf(pHReader_addr, NULL) )
@@ -308,14 +318,14 @@ _addr_to_func(
             break;
         }
 
-        pCur_func_addr = (unsigned long*)pHReader_addr->pCur;
+        cur_func_addr = GET_DWORD(pCur[0], pCur[1], pCur[2], pCur[3]);
 
         pCur_item = pSymbol_table->pSymbol_head;
 
         while( pCur_item )
         {
-            // fprintf(stderr, "\t[%08lx] %s(%08x)\n", *pCur_func_addr, pCur_item->symbol_name, pCur_item->pAddr);
-            if( (unsigned long)pCur_item->pAddr == *pCur_func_addr )
+            // fprintf(stderr, "\t[%08lx] %s(%08x)\n", cur_func_addr, pCur_item->symbol_name, pCur_item->pAddr);
+            if( (unsigned long)pCur_item->pAddr == cur_func_addr )
             {
                 if( fout )
                     fprintf(fout, "* (.text.%s)\n", pCur_item->symbol_name);
@@ -326,7 +336,7 @@ _addr_to_func(
             pCur_item = pCur_item->next;
         }
 
-        if( !is_found )     err_msg("func addr 'x%p' can't find\n", pCur_func_addr);
+        if( !is_found )     err_msg("func addr 'x%08lx' can't find\n", cur_func_addr);
 
         pHReader_addr->pCur += sizeof(unsigned long);
     }
@@ -480,6 +490,7 @@ _look_up_relation(
     return rval;
 }
 
+
 static int
 _complete_func_table(
     partial_read_t      *pHReader_basic_func_flow,
@@ -582,6 +593,164 @@ _complete_func_table(
     return rval;
 }
 
+
+static unsigned int
+_get_act_mark_num(
+    mark_info_t     *pMark_info)
+{
+    unsigned int    act_mark_id = 0;
+    if( pMark_info->mark_order < MAX_MARK_NUM )
+    {
+        act_mark_id = pMark_info->crc_mark[pMark_info->mark_order];
+    }
+
+    return act_mark_id;
+}
+
+static int
+_partition_func_table(
+    char                 *pEnter_name,
+    unsigned int         crc_enter_id,
+    mark_info_t          *pMark_info,
+    table_call_graph_t   *pCall_graph_table,
+    table_symbols_t      *pSymbol_table_lite,
+    table_symbols_t      *pSymbol_table_leaf)
+{
+    int         rval = 0;
+    do {
+        int                     mark_order = 0;
+        symbol_relation_t       *pCur = 0, *pAct = 0;
+        symbol_itm_t            *pSymbol_callee = 0;
+
+        if( !pCall_graph_table->pSymbol_head )      break;
+
+        crc_enter_id = (crc_enter_id) ? crc_enter_id : calc_crc32((uint8_t*)pEnter_name, strlen(pEnter_name));
+
+        pCur = pCall_graph_table->pSymbol_head;
+        while( pCur )
+        {
+            if( pCur->crc_id == crc_enter_id )
+            {
+                pAct = pCur;
+                break;
+            }
+            pCur = pCur->next;
+        }
+
+        if( !pAct )
+        {
+            symbol_itm_t        *pSymbol_act = 0;
+
+            // recode the symbol which the leaf function in graph relation
+            if( pSymbol_table_leaf->pSymbol_head )
+            {
+                symbol_itm_t    *pSymbol_cur = pSymbol_table_leaf->pSymbol_head;
+
+                while( pSymbol_cur )
+                {
+                    if( pSymbol_cur->crc_id == crc_enter_id )
+                    {
+                        pSymbol_act = pSymbol_cur;
+                        break;
+                    }
+                    pSymbol_cur = pSymbol_cur->next;
+                }
+            }
+
+            if( pSymbol_act )       break;
+
+            if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
+            {
+                err_msg("malloc '%d' fail \n", sizeof(symbol_itm_t));
+                break;
+            }
+            memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
+
+            pSymbol_act->crc_id = crc_enter_id;
+            snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", pEnter_name);
+
+            if( pSymbol_table_leaf->pSymbol_head )
+            {
+                pSymbol_table_leaf->pSymbol_cur->next = pSymbol_act;
+                pSymbol_table_leaf->pSymbol_cur       = pSymbol_act;
+            }
+            else
+            {
+                pSymbol_table_leaf->pSymbol_head = pSymbol_table_leaf->pSymbol_cur = pSymbol_act;
+            }
+            break;
+        }
+
+        pSymbol_callee = pAct->pCallee_list_head;
+        while( pSymbol_callee )
+        {
+            symbol_itm_t        *pSymbol_act = 0;
+
+            // TODO: need to record the crc_mark_id in pSymbol_table_lite
+            if( _get_act_mark_num(pMark_info) == pSymbol_callee->crc_id )
+            {
+                pMark_info->mark_order++;
+                pSymbol_callee = pSymbol_callee->next;
+                continue;
+            }
+
+            // exist or not in symbol_table_lite
+            if( pSymbol_table_lite->pSymbol_head )
+            {
+                symbol_itm_t    *pSymbol_cur = pSymbol_table_lite->pSymbol_head;
+
+                while( pSymbol_cur )
+                {
+                    if( pSymbol_cur->crc_id == pSymbol_callee->crc_id )
+                    {
+                        pSymbol_act = pSymbol_cur;
+                        break;
+                    }
+                    pSymbol_cur = pSymbol_cur->next;
+                }
+            }
+
+            // add to symbol_table_lite
+            if( !pSymbol_act )
+            {
+                if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
+                {
+                    err_msg("malloc '%d' fail \n", sizeof(symbol_itm_t));
+                    break;
+                }
+                memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
+
+                // TODO:  need to add crc_mark_id member
+                pSymbol_act->crc_mark_id = _get_act_mark_num(pMark_info);
+                pSymbol_act->crc_id      = pSymbol_callee->crc_id;
+                snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", pSymbol_callee->symbol_name);
+
+                if( pSymbol_table_lite->pSymbol_head )
+                {
+                    pSymbol_table_lite->pSymbol_cur->next = pSymbol_act;
+                    pSymbol_table_lite->pSymbol_cur       = pSymbol_act;
+                }
+                else
+                {
+                    pSymbol_table_lite->pSymbol_head = pSymbol_table_lite->pSymbol_cur = pSymbol_act;
+                }
+
+                mark_order = pMark_info->mark_order;
+
+                _partition_func_table(pSymbol_callee->symbol_name, pSymbol_callee->crc_id, pMark_info,
+                                      pCall_graph_table, pSymbol_table_lite, pSymbol_table_leaf);
+
+                pMark_info->mark_order = mark_order;
+            }
+
+            pSymbol_callee = pSymbol_callee->next;
+        }
+
+    } while(0);
+
+    return rval;
+}
+
 static int
 _relate_leaf_with_lib(
     table_symbols_t  *pSymbol_table_leaf,
@@ -647,7 +816,8 @@ _gen_lds(char *pIni_path)
     my_time_t           t_start = 0, t_diff = 0;
 
     do {
-        int         i, tag_cnt = 0;
+        int             i, tag_cnt = 0;
+        mark_info_t     mark_info = {0};
 
         pIni = iniparser_load(pIni_path);
         if( pIni == NULL )
@@ -811,7 +981,7 @@ _gen_lds(char *pIni_path)
             if( (rval = _create_reader(&hReader_func_addr, pPath)) )
                 break;
 
-            _addr_to_func(&hReader_func_addr, &symbol_table_all);
+//            _addr_to_func(&hReader_func_addr, &symbol_table_all);
             _destroy_reader(&hReader_func_addr);
 
             args.table.pTable_symbols   = &symbol_table_all;
@@ -821,13 +991,24 @@ _gen_lds(char *pIni_path)
 
             //-------------------------------
             // complete functions base on basic_func_flow
-            pPath = FILE_NAME__BASIC_FUNC_FLOW;
+            pPath = "func_list.dump";// FILE_NAME__BASIC_FUNC_FLOW;
             hReader_basic_func_flow.alignment     = 0;
             hReader_basic_func_flow.is_big_endian = 0;
             if( (rval = _create_reader(&hReader_basic_func_flow, pPath)) )
                 break;
 
-            _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
+            // _complete_func_table(&hReader_basic_func_flow, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
+            {
+                #define ROOT_START_SYMBOL_NAME      "main" // "startup.main"
+
+                mark_info.mark_order = 0;
+                mark_info.crc_mark[0] = calc_crc32((uint8_t*)"_flow_mark_0", strlen("_flow_mark_0"));
+                mark_info.crc_mark[1] = calc_crc32((uint8_t*)"_flow_mark_1", strlen("_flow_mark_1"));
+                mark_info.crc_mark[2] = calc_crc32((uint8_t*)"_flow_mark_2", strlen("_flow_mark_2"));
+
+                _partition_func_table(ROOT_START_SYMBOL_NAME, 0, &mark_info, &call_graph_table, &symbol_table_lite, &symbol_leaf_table);
+            }
+
             _destroy_reader(&hReader_basic_func_flow);
 
             args.table.pTable_symbols   = &symbol_table_lite;
@@ -874,6 +1055,44 @@ _gen_lds(char *pIni_path)
             _duplicate_file(pOut_path, FILE_NAME__OUT_TEMP);
 
             MESURE_TIME(&t_start, &t_diff, 0);
+        }
+
+        {
+            FILE        *fout = 0;
+            int         j;
+
+            do {
+                char                *pOut_name = "z_out_partial.txt";
+                table_symbols_t     *pSymbol_table = &symbol_table_lite;
+                symbol_itm_t        *pCur = 0;
+
+                if( !pSymbol_table || !pOut_name )    break;
+
+                if( !(fout = fopen(pOut_name, "wb")) )
+                {
+                    err_msg("open '%s' fail \n", pOut_name);
+                    break;
+                }
+
+                for(j = 0; j < MAX_MARK_NUM; ++j)
+                {
+                    unsigned int    act_mark_id = mark_info.crc_mark[j];
+
+                    pCur = pSymbol_table->pSymbol_head;
+                    while( pCur )
+                    {
+                        if( pCur->crc_mark_id == act_mark_id )
+                            fprintf(fout, "* (.text.%s*)\t\t%d\n", pCur->symbol_name, j);
+                        pCur = pCur->next;
+                    }
+
+                    fprintf(fout, "\n\n");
+                }
+
+
+            } while(0);
+
+            if( fout )      fclose(fout);
         }
 
     } while(0);

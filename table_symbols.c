@@ -57,7 +57,7 @@ symbols_create(table_op_args_t *pArgs)
     pHReader        = (partial_read_t*)pArgs->pTunnel_info;
     pSymbol_table   = pArgs->table.pTable_symbols;
 
-    rval = regcomp(&hRegex, "(.*)\\s+(\\w)\\s+(.*)\\s+.*$", REG_EXTENDED);
+    rval = regcomp(&hRegex, "^([0-9a-fA-F]+)\\s+(\\w)\\s+(\\w+).*$", REG_EXTENDED);
     if( rval )
     {
         char    msgbuf[256] = {0};
