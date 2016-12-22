@@ -41,8 +41,13 @@ _post_read(unsigned char *pBuf, int buf_size)
     int     i;
     for(i = 0; i < buf_size; ++i)
     {
-        if( pBuf[i] == '\n' || pBuf[i] == '\r' )
+        unsigned char   value = pBuf[i];
+
+        if( value == '\n' || value == '\r' )
             pBuf[i] = '\0';
+
+        if( value == '\\' )
+            pBuf[i] = '/';
     }
     return 0;
 }
@@ -76,7 +81,6 @@ lib_obj_create(table_op_args_t *pArgs)
         }
 
         {   // start parsing a line
-            int                 i;
             uint32_t            crc_id = 0;
             char                *pAct_str = 0;
             char                lib_name[MAX_SYMBOL_NAME_LENGTH] = {0};
@@ -89,9 +93,6 @@ lib_obj_create(table_op_args_t *pArgs)
             pAct_str = (char*)pHReader->pCur;
 
             pHReader->pCur += (strlen((char*)pHReader->pCur) + 1);
-
-            for(i = 0; i < strlen(pAct_str); ++i)
-                pAct_str[i] = (pAct_str[i] == '\\') ? '/' : pAct_str[i];
 
             rval = regexec(&hRegex, pAct_str, nmatch, match_info, 0);
             if( rval == REG_NOMATCH || rval )
@@ -126,7 +127,6 @@ lib_obj_create(table_op_args_t *pArgs)
                         // err_msg("wrong obj name '%s.%c'\n", obj_name, pAct_str[match_info[4].rm_so]);
                         continue;
                     }
-
                 }
             }
 
@@ -197,7 +197,7 @@ lib_obj_create(table_op_args_t *pArgs)
             }
             memset(pAct_obj, 0x0, sizeof(obj_itm_t));
 
-            pAct_obj->crc_id = crc_id;
+            pAct_obj->crc_id   = crc_id;
             snprintf(pAct_obj->obj_name, MAX_SYMBOL_NAME_LENGTH, "%s.o", obj_name);
             if(  pAct_lib->pObj_head )
             {
