@@ -270,8 +270,33 @@ _output_lds(
                         if( pCur->crc_id == g_main_crc_id )
                             snprintf(pCur->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", "startup.main");
 
-                        fprintf(fout, "\t\t* (.text.%s*)\n", pCur->symbol_name);
+                        fprintf(fout, "\t\t* (.text.%s*)\t/* x%x */\n", pCur->symbol_name, pCur->lib_crc_id);
                         pCur->is_outputted = 1;
+
+                        // output rodata in a object
+                        {
+                            lib_itm_t       *pCur_lib = pOut_info->pLib_table->pLib_head;
+                            while( pCur_lib )
+                            {
+                                unsigned int    is_get_obj = 0;
+                                obj_itm_t       *pCur_obj = pCur_lib->pObj_head;
+                                while( pCur_obj )
+                                {
+                                    if( pCur_obj->crc_id == pCur->obj_crc_id)
+                                    {
+                                        fprintf(fout, "\t\t*%s* (.rodata* )\n", pCur_obj->obj_name);
+                                        is_get_obj = 1;
+                                        break;
+                                    }
+                                    pCur_obj = pCur_obj->next;
+                                }
+
+                                if( is_get_obj )        break;
+
+                                pCur_lib = pCur_lib->next;
+                            }
+                        }
+
                     }
 
                     pCur = pCur->next;
@@ -293,7 +318,7 @@ _output_lds(
                             {
                                 obj_itm_t       *pCur_obj = pCur_lib->pObj_head;
 
-                                fprintf(fout, "\n\t\t/* %s */\n", pCur_lib->lib_name);
+                                fprintf(fout, "\n\t\t/* %s, lib_id= x%x */\n", pCur_lib->lib_name, pCur_lib->crc_id);
                                 while( pCur_obj )
                                 {
                                     fprintf(fout, "\t\t*%s* (.text* )\n", pCur_obj->obj_name);
@@ -800,7 +825,7 @@ _complete_func_table(
             }
 
             // look up all_graph to get calllee
-//            _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite, pSymbol_table_leaf);
+            // _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite, pSymbol_table_leaf);
         }
     }
 
@@ -812,7 +837,7 @@ _complete_func_table(
 }
 
 static int
-_relate_leaf_with_lib(
+_relate_symbol_with_lib(
     table_symbols_t  *pSymbol_table_leaf,
     table_symbols_t  *pSymbol_table_lib)
 {
@@ -1154,7 +1179,8 @@ _gen_lds(char *pIni_path)
 
             //------------------------------
             // check a leaf symbol is in which lib
-            _relate_leaf_with_lib(&symbol_leaf_table, &symbol_lib_table);
+            _relate_symbol_with_lib(&symbol_leaf_table, &symbol_lib_table);
+            _relate_symbol_with_lib(&symbol_table_lite, &symbol_lib_table);
 
             args.table.pTable_symbols   = &symbol_leaf_table;
             args.pOut_name              = "z_leaf_lib.txt";
