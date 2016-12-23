@@ -17,9 +17,19 @@ SECTIONS
 
     . = ALIGN(32);
     __ddr_region2_ro_start = .;
+    ${RTAG_2}
+    __ddr_region2_ro_end = .;
+
+    . = ALIGN(32);
+    __ddr_region3_ro_start = .;
+    ${RTAG_3}
+    __ddr_region3_ro_end = .;
+
+    . = ALIGN(32);
+    __ddr_region4_ro_start = .;
     * (.text*)
     * (.rodata*)
-    __ddr_region2_ro_end = .;
+    __ddr_region4_ro_end = .;
 
     . = ALIGN(32);
     *(.rodata*)
