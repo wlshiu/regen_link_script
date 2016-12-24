@@ -36,6 +36,7 @@
     #define get_start_time(pTime_start)                     do{ (*pTime_start) = GetTickCount(); }while(0)
     #define get_duration_ms(pTime_start, pDiff_ms)          do{ (*pDiff_ms) = 0; (*pDiff_ms) = GetTickCount() - (*pTime_start); }while(0)
 #else
+    #include <windows.h>
     #include <time.h>
     #define my_time_t                                       time_t
     #define get_start_time(pTime_start)                     do{ (*pTime_start) = time(NULL); }while(0)

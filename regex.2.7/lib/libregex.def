@@ -15,3 +15,4 @@ EXPORTS
     regexec @14
     regfree @15
     reggetinfo @16
+    reggettime @17
