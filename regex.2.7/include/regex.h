@@ -573,6 +573,7 @@ REGEX_DLL_IMPEXP size_t regerror (int __errcode, const regex_t *__restrict __pre
 REGEX_DLL_IMPEXP void regfree (regex_t *__preg);
 
 REGEX_DLL_IMPEXP void* reggetinfo(const char *name);
+REGEX_DLL_IMPEXP time_t reggettime(void);
 
 
 #ifdef __cplusplus
