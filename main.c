@@ -42,6 +42,7 @@
     #define get_duration_ms(pTime_start, pDiff_ms)          do{ (*pDiff_ms) = 0; (*pDiff_ms) = (time(NULL) - (*pTime_start)) * 1000; }while(0)
 #endif
 
+#if 0
 #define MESURE_TIME(pTime_start, pDiff_ms, is_start)                               \
         do{ if( !is_start ) {                                                      \
                 get_duration_ms(pTime_start, pDiff_ms);                            \
@@ -49,7 +50,9 @@
             }                                                                      \
             get_start_time(pTime_start);                                           \
         }while(0)
-
+#else
+    #define MESURE_TIME(pTime_start, pDiff_ms, is_start)
+#endif
 
 #define GET_DWORD(a, b, c, d)       (((a)&0xFF) | (((b)&0xFF) << 8) | (((c)&0xFF) << 16) | (((d)&0xFF) << 24))
 
@@ -373,149 +376,6 @@ _addr_to_func(
 }
 
 static FILE *g_fFunc_tree = 0;
-static int  g_indent = 0;
-static int
-_look_up_relation(
-    table_call_graph_t  *pCall_graph_table,
-    uint32_t            crc_id,
-    char                *pSym_name,
-    table_symbols_t     *pSymbol_table_lite,
-    table_symbols_t     *pSymbol_table_leaf)
-{
-    int     rval = 0;
-
-    {
-        ++g_indent;
-        if( g_fFunc_tree )
-        {
-            int     i;
-            for(i = 0; i < g_indent; ++i)
-                fprintf(g_fFunc_tree, "    ");
-            fprintf(g_fFunc_tree, " %s\n", pSym_name);
-        }
-    }
-
-    do {
-        symbol_relation_t       *pCur = 0, *pAct = 0;
-        symbol_itm_t            *pSymbol_callee = 0;
-
-        if( !pCall_graph_table->pSymbol_head )      break;
-
-        pCur = pCall_graph_table->pSymbol_head;
-        while( pCur )
-        {
-            if( pCur->crc_id == crc_id )
-            {
-                pAct = pCur;
-                break;
-            }
-            pCur = pCur->next;
-        }
-
-        if( !pAct )
-        {
-            symbol_itm_t        *pSymbol_act = 0;
-
-            // recode the symbol which the leaf function in graph relation
-            if( pSymbol_table_leaf->pSymbol_head )
-            {
-                symbol_itm_t    *pSymbol_cur = pSymbol_table_leaf->pSymbol_head;
-
-                while( pSymbol_cur )
-                {
-                    if( pSymbol_cur->crc_id == crc_id )
-                    {
-                        pSymbol_act = pSymbol_cur;
-                        break;
-                    }
-                    pSymbol_cur = pSymbol_cur->next;
-                }
-            }
-
-            if( pSymbol_act )       break;
-
-            if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
-            {
-                err_msg("malloc '%d' fail \n", sizeof(symbol_itm_t));
-                break;
-            }
-            memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
-
-            pSymbol_act->crc_id = crc_id;
-            snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", pSym_name);
-
-            if( pSymbol_table_leaf->pSymbol_head )
-            {
-                pSymbol_table_leaf->pSymbol_cur->next = pSymbol_act;
-                pSymbol_table_leaf->pSymbol_cur       = pSymbol_act;
-            }
-            else
-            {
-                pSymbol_table_leaf->pSymbol_head = pSymbol_table_leaf->pSymbol_cur = pSymbol_act;
-            }
-
-            break;
-        }
-
-        pSymbol_callee = pAct->pCallee_list_head;
-        while( pSymbol_callee )
-        {
-            symbol_itm_t        *pSymbol_act = 0;
-
-            // exist or not in symbol_table_lite
-            if( pSymbol_table_lite->pSymbol_head )
-            {
-                symbol_itm_t    *pSymbol_cur = pSymbol_table_lite->pSymbol_head;
-
-                while( pSymbol_cur )
-                {
-                    if( pSymbol_cur->crc_id == pSymbol_callee->crc_id )
-                    {
-                        pSymbol_act = pSymbol_cur;
-                        break;
-                    }
-                    pSymbol_cur = pSymbol_cur->next;
-                }
-            }
-
-            // add to symbol_table_lite
-            if( !pSymbol_act )
-            {
-                if( !(pSymbol_act = malloc(sizeof(symbol_itm_t))) )
-                {
-                    err_msg("malloc '%d' fail \n", sizeof(symbol_itm_t));
-                    break;
-                }
-                memset(pSymbol_act, 0x0, sizeof(symbol_itm_t));
-
-                pSymbol_act->crc_id = pSymbol_callee->crc_id;
-                snprintf(pSymbol_act->symbol_name, MAX_SYMBOL_NAME_LENGTH, "%s", pSymbol_callee->symbol_name);
-
-                if( pSymbol_table_lite->pSymbol_head )
-                {
-                    pSymbol_table_lite->pSymbol_cur->next = pSymbol_act;
-                    pSymbol_table_lite->pSymbol_cur       = pSymbol_act;
-                }
-                else
-                {
-                    pSymbol_table_lite->pSymbol_head = pSymbol_table_lite->pSymbol_cur = pSymbol_act;
-                }
-
-                _look_up_relation(pCall_graph_table, pSymbol_callee->crc_id, pSymbol_callee->symbol_name,
-                                  pSymbol_table_lite, pSymbol_table_leaf);
-            }
-
-            pSymbol_callee = pSymbol_callee->next;
-        }
-
-    } while(0);
-
-    {
-        --g_indent;
-    }
-    return rval;
-}
-
 
 static int
 _complete_func_table(
@@ -608,7 +468,7 @@ _complete_func_table(
             }
 
             // look up all_graph to get calllee
-            _look_up_relation(pCall_graph_table, crc_id, symbol_name, pSymbol_table_lite, pSymbol_table_leaf);
+            reggenrelation((void*)pCall_graph_table, (unsigned int)crc_id, symbol_name, (void*)pSymbol_table_lite, (void*)pSymbol_table_leaf);
         }
     }
 
@@ -651,8 +511,8 @@ _relate_symbol_with_lib(
                 pCur_symbol = pCur_symbol->next;
             }
 
-            if( !is_exist )
-                err_msg("leaf symbol '%s' can't find lib\n", pAct_symbol->symbol_name);
+            // if( !is_exist )
+            //     err_msg("leaf symbol '%s' can't find lib\n", pAct_symbol->symbol_name);
 
             pAct_symbol = pAct_symbol->next;
         }
@@ -967,6 +827,7 @@ _gen_lds(char *pIni_path)
     table_mgr__destroy_table(pTab_mgr, TABLE_ID_CALL_GRAPH, &args);
 
     table_mgr__deinit(&pTab_mgr);
+    fprintf(stderr, "--------- done\n");
 
     return rval;
 }

@@ -572,6 +572,15 @@ REGEX_DLL_IMPEXP size_t regerror (int __errcode, const regex_t *__restrict __pre
 
 REGEX_DLL_IMPEXP void regfree (regex_t *__preg);
 
+REGEX_DLL_IMPEXP int
+reglookuptable(char *name, unsigned int crc, void *mark_info,
+            void *call_graph, void *symbol_lite,
+            void *symbol_leaf);
+
+REGEX_DLL_IMPEXP int
+reggenrelation(void *call_g, unsigned int crc, char *name,
+    void *symbol_lite, void *symbol_leaf);
+
 REGEX_DLL_IMPEXP void* reggetinfo(const char *name);
 REGEX_DLL_IMPEXP time_t reggettime(void);
 

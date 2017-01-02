@@ -14,5 +14,7 @@ EXPORTS
     regerror @13
     regexec @14
     regfree @15
-    reggetinfo @16
-    reggettime @17
+    reggenrelation @16
+    reggetinfo @17
+    reggettime @18
+    reglookuptable @19
