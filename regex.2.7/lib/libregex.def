@@ -16,3 +16,4 @@ EXPORTS
     regfree @15
     reggetinfo @16
     reggettime @17
+    reglookuptable @18

@@ -55,14 +55,6 @@
 #define GET_DWORD(a, b, c, d)       (((a)&0xFF) | (((b)&0xFF) << 8) | (((c)&0xFF) << 16) | (((d)&0xFF) << 24))
 
 //=========================================================
-typedef struct mark_info
-{
-#define MAX_MARK_NUM        6
-    int             mark_order;
-    unsigned int    crc_mark[MAX_MARK_NUM];
-
-} mark_info_t;
-
 static unsigned int     g_main_crc_id = 0;
 static unsigned int     g_def_libs_crc[MAX_DEF_LIBS_NUM] = {0};
 //==============================================================
@@ -285,7 +277,7 @@ _output_lds(
                                 {
                                     if( pCur_obj->crc_id == pCur->obj_crc_id)
                                     {
-                                        fprintf(fout, "\t\t*%s* (.rodata* )\n", pCur_obj->obj_name);
+                                        // fprintf(fout, "\t\t*%s* (.rodata* )\n", pCur_obj->obj_name);
                                         is_get_obj = 1;
                                         break;
                                     }
@@ -550,21 +542,21 @@ static unsigned int
 _get_mark_order(
     mark_info_t    *pMark_info,
     unsigned int    mark_id)
-                {
+{
     int             i;
     unsigned int    act_mark_order = 0xFF;
 
     for(i = 0; i < MAX_MARK_NUM; ++i)
-                {
+    {
         if( pMark_info->crc_mark[i] == mark_id )
-            {
+        {
             act_mark_order = i;
-                break;
-            }
-            }
+            break;
+        }
+    }
 
     return act_mark_order;
-    }
+}
 
 static unsigned int
 _get_act_mark_crc(
@@ -709,8 +701,8 @@ _partition_func_table(
 
                 mark_order = pMark_info->mark_order;
 
-                _partition_func_table(pSymbol_callee->symbol_name, pSymbol_callee->crc_id, pMark_info,
-                                      pCall_graph_table, pSymbol_table_lite, pSymbol_table_leaf);
+                reglookuptable(pSymbol_callee->symbol_name, pSymbol_callee->crc_id, (void*)pMark_info,
+                               (void*)pCall_graph_table, (void*)pSymbol_table_lite, (void*)pSymbol_table_leaf);
 
                 pMark_info->mark_order = mark_order;
             }

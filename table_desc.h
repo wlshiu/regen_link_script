@@ -186,7 +186,13 @@ typedef struct table_ops_t
 } table_ops_t;
 
 
+typedef struct mark_info
+{
+#define MAX_MARK_NUM        6
+    int             mark_order;
+    unsigned int    crc_mark[MAX_MARK_NUM];
 
+} mark_info_t;
 //=============================================================================
 //                  Global Data Definition
 //=============================================================================
