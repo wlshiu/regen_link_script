@@ -367,7 +367,7 @@ _addr_to_func(
 
         if( !is_found )     err_msg("func addr 'x%08lx' can't find\n", cur_func_addr);
 
-        pHReader_addr->pCur += sizeof(unsigned long);
+        pHReader_addr->pCur += pHReader_addr->alignment;
     }
 
     if( fout )  fclose(fout);
