@@ -314,6 +314,7 @@ _output_lds(
                                 fprintf(fout, "\n\t\t/* %s, lib_id= x%x */\n", pCur_lib->lib_name, pCur_lib->crc_id);
                                 while( pCur_obj )
                                 {
+                                    // fprintf(fout, "\t\t*%s* (.text* .rodata* )\n", pCur_obj->obj_name);
                                     fprintf(fout, "\t\t*%s* (.text* )\n", pCur_obj->obj_name);
                                     pCur_obj = pCur_obj->next;
                                 }
