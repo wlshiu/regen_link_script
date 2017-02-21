@@ -273,6 +273,29 @@ _output_lds(
 
                         fprintf(fout, "\t\t* (.text.%s*) /* x%x*/\n", pCur->symbol_name, pCur->lib_crc_id);
                         pCur->is_outputted = 1;
+
+                        {
+                            lib_itm_t       *pCur_lib = pOut_info->pLib_table->pLib_head;
+                            while( pCur_lib )
+                            {
+                                unsigned int    is_get_obj = 0;
+                                obj_itm_t       *pCur_obj = pCur_lib->pObj_head;
+                                while( pCur_obj )
+                                {
+                                    if( pCur_obj->crc_id == pCur->obj_crc_id)
+                                    {
+                                        // fprintf(fout, "\t\t*%s* (.rodata* )\n", pCur_obj->obj_name);
+                                        is_get_obj = 1;
+                                        break;
+                                    }
+                                    pCur_obj = pCur_obj->next;
+                                }
+
+                                if( is_get_obj )        break;
+
+                                pCur_lib = pCur_lib->next;
+                            }
+                        }
                     }
 
                     pCur = pCur->next;
@@ -296,6 +319,7 @@ _output_lds(
                                 fprintf(fout, "\n\t\t/* %s, lib_id= x%x */\n", pCur_lib->lib_name, pCur_lib->crc_id);
                                 while( pCur_obj )
                                 {
+                                    // fprintf(fout, "\t\t*%s* (.text* .rodata* )\n", pCur_obj->obj_name);
                                     fprintf(fout, "\t\t*%s* (.text* )\n", pCur_obj->obj_name);
                                     pCur_obj = pCur_obj->next;
                                 }
